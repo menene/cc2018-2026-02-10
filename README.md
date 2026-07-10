@@ -30,61 +30,66 @@ git clone https://github.com/menene/cc2018-2026-02-10.git
 cd cc2018-2026-02-10
 
 # Elegir una etapa
-git checkout SR-06-Filled-Polygon
+git checkout 06-SR-06-FILLED-POLYGON
 
 # Compilar y correr
 cargo run
 ```
 
-Las primeras etapas de Software Rendering escriben una imagen (por ejemplo `output.bmp`) en el directorio del proyecto; a partir de `SR-07-WINDOWS` se abre una ventana con render loop en vivo.
+Las primeras etapas de Software Rendering escriben una imagen (por ejemplo `output.bmp`) en el directorio del proyecto; a partir de `07-SR-07-WINDOWS` se abre una ventana con render loop en vivo.
 
 ---
 
 ## Índice de ramas
 
+### Fase 0 · Preparación
+| Rama | Descripción |
+|------|-------------|
+| `00-HELLO-WORLD` | Hello world en Rust; setup del entorno y de Cargo |
+
 ### Fase 1 · Software Rendering
-| № | Rama | Descripción |
-|---|------|-------------|
-| 01 | `SR-01-Point` | `Framebuffer` + escritor BMP; dibujar puntos |
-| 02 | `SR-02-Line` | Dibujo de líneas |
-| 03 | `SR-03-Polygon` | Contornos de polígonos a partir de vértices |
-| 04 | `SR-04-Triangle` | Rasterización de triángulos (primitiva rellenable base) |
-| 05 | `SR-05-New-Line` | Algoritmo de línea mejorado (entero / scanline) |
-| 06 | `SR-06-Filled-Polygon` | Relleno de polígonos por scanline |
-| 07 | `SR-07-WINDOWS` | Ventana en tiempo real |
-| 08 | `SR-08-RENDER-LOOP` | Main render loop |
+| Rama | Descripción |
+|------|-------------|
+| `01-SR-01-POINT` | `Framebuffer` + escritor BMP; dibujar puntos |
+| `02-SR-02-LINE` | Dibujo de líneas |
+| `03-SR-03-POLYGON` | Contornos de polígonos a partir de vértices |
+| `04-SR-04-TRIANGLE` | Rasterización de triángulos (primitiva rellenable base) |
+| `05-SR-05-NEW-LINE` | Algoritmo de línea mejorado (entero / scanline) |
+| `06-SR-06-FILLED-POLYGON` | Relleno de polígonos por scanline |
+| `07-SR-07-WINDOWS` | Ventana en tiempo real |
+| `08-SR-08-RENDER-LOOP` | Main render loop |
 
 ### Fase 2 · Raycasting
-| № | Rama | Descripción |
-|---|------|-------------|
-| 09 | `RC-01-MAZE-LOADER` | Cargar laberinto desde archivo de texto; mundo 2D y cast ray |
-| 10 | `RC-02-MAZE-PLAYER` | Controlador del jugador |
-| 11 | `RC-03-MAZE-FIELD-VIEW` | Campo de visión en primera persona |
-| 12 | `RC-04-MAZE-EVENTS` | Eventos de entrada, texturas y sprites |
+| Rama | Descripción |
+|------|-------------|
+| `09-RC-01-MAZE-LOADER` | Cargar laberinto desde archivo de texto; mundo 2D y cast ray |
+| `10-RC-02-MAZE-PLAYER` | Controlador del jugador |
+| `11-RC-03-MAZE-FIELD-VIEW` | Campo de visión en primera persona |
+| `12-RC-04-MAZE-EVENTS` | Eventos de entrada, texturas y sprites |
 
 ### Fase 3 · Raytracing
-| № | Rama | Descripción |
-|---|------|-------------|
-| 13 | `RT-01-RAYS` | Rayos 3D y objetos 3D |
-| 14 | `RT-02-Materials` | Sistema de materiales |
-| 15 | `RT-03-ORBIT-CAMERA` | Cámara orbital |
-| 16 | `RT-04-LIGHT` | Iluminación difusa y especular |
-| 17 | `RT-05-SHADOW` | Sombras |
-| 18 | `RT-06-REFLECTIONS` | Reflexiones |
-| 19 | `RT-07-REFRACTIONS` | Refracciones |
+| Rama | Descripción |
+|------|-------------|
+| `13-RT-01-RAYS` | Rayos 3D y objetos 3D |
+| `14-RT-02-MATERIALS` | Sistema de materiales |
+| `15-RT-03-ORBIT-CAMERA` | Cámara orbital |
+| `16-RT-04-LIGHT` | Iluminación difusa y especular |
+| `17-RT-05-SHADOW` | Sombras |
+| `18-RT-06-REFLECTIONS` | Reflexiones |
+| `19-RT-07-REFRACTIONS` | Refracciones |
 
 ### Fase 4 · Render Pipeline
-| № | Rama | Descripción |
-|---|------|-------------|
-| 20 | `RP-01-3D-MODELS` | Carga de OBJ y vertex arrays |
-| 21 | `RP-02-FLAT-SHADING` | Flat shading |
-| 22 | `RP-03-VALUE-INTERPOLATION` | Coordenadas baricéntricas y relleno de triángulos |
-| 23 | `RP-04-MATRIX-TRANSFORMATIONS` | Matrices de modelo / vista / proyección / viewport |
-| 24 | `RP-05-ORBIT-CAMERA` | Movimiento de cámara y de personaje |
-| 25 | `RP-06-FRAGMENT-SHADER` | Fragment shaders |
-| 26 | `RP-07-ANIMATED-FRAGMENT-SHADER` | Shaders animados en el tiempo |
-| 27 | `RP-08-COMBINED-FRAGMENT-SHADER` | Shaders combinados / múltiples objetos |
-| 28 | `RP-09-NOISE-FRAGMENT-SHADER` | Shaders basados en ruido (warp speed) |
+| Rama | Descripción |
+|------|-------------|
+| `20-RP-01-3D-MODELS` | Carga de OBJ y vertex arrays |
+| `21-RP-02-FLAT-SHADING` | Flat shading |
+| `22-RP-03-VALUE-INTERPOLATION` | Coordenadas baricéntricas y relleno de triángulos |
+| `23-RP-04-MATRIX-TRANSFORMATIONS` | Matrices de modelo / vista / proyección / viewport |
+| `24-RP-05-ORBIT-CAMERA` | Movimiento de cámara y de personaje |
+| `25-RP-06-FRAGMENT-SHADER` | Fragment shaders |
+| `26-RP-07-ANIMATED-FRAGMENT-SHADER` | Shaders animados en el tiempo |
+| `27-RP-08-COMBINED-FRAGMENT-SHADER` | Shaders combinados / múltiples objetos |
+| `28-RP-09-NOISE-FRAGMENT-SHADER` | Shaders basados en ruido (warp speed) |
 
 ---
 
