@@ -1,5 +1,5 @@
 [package]
-name = "sr_05_windows"
+name = "sr_06_render_loop"
 version = "0.1.0"
 edition = "2021"
 
