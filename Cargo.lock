@@ -3,5 +3,5 @@
 version = 3
 
 [[package]]
-name = "sr_02_line"
+name = "sr_03_polygon"
 version = "0.1.0"
