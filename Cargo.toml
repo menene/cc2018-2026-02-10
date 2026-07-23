@@ -1,5 +1,5 @@
 [package]
-name = "sr_04_filled_polygon"
+name = "sr_05_windows"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 nalgebra-glm = "0.18.0"
+minifb = "0.26.0"
