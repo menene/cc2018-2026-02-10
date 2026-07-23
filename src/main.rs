@@ -1,10 +1,13 @@
+extern crate nalgebra_glm as glm;
+
 mod framebuffer;
 mod line;
 mod polygon;
 mod bmp;
 
+use glm::Vec3;
+
 use crate::framebuffer::Framebuffer;
-use crate::line::Line;
 use crate::polygon::Polygon;
 use crate::bmp::WriteBmp;
 
@@ -14,28 +17,26 @@ fn main() {
     framebuffer.set_background_color(0x000000);
     framebuffer.clear();
 
-    framebuffer.set_current_color(0xFFFFFF);
-
-    // cuadrado
-    framebuffer.line(350, 350, 450, 350);
-    framebuffer.line(450, 350, 450, 450);
-    framebuffer.line(450, 450, 350, 450);
-    framebuffer.line(350, 450, 350, 350);
-
-    let poly1 = vec![
-        (165, 380),
-        (185, 360),
-        (180, 330),
-        (207, 345),
-        (233, 330),
-        (230, 360),
-        (250, 380),
-        (220, 385),
-        (205, 410),
-        (193, 383),
+    let estrella = vec![
+        Vec3::new(165.0, 380.0, 0.0),
+        Vec3::new(185.0, 360.0, 0.0),
+        Vec3::new(180.0, 330.0, 0.0),
+        Vec3::new(207.0, 345.0, 0.0),
+        Vec3::new(233.0, 330.0, 0.0),
+        Vec3::new(230.0, 360.0, 0.0),
+        Vec3::new(250.0, 380.0, 0.0),
+        Vec3::new(220.0, 385.0, 0.0),
+        Vec3::new(205.0, 410.0, 0.0),
+        Vec3::new(193.0, 383.0, 0.0),
     ];
 
-    framebuffer.polygon(&poly1);
+    // Relleno del polígono por scanline.
+    framebuffer.set_current_color(0xFFCC00);
+    framebuffer.filled_polygon(&estrella);
+
+    // Contorno del mismo polígono encima del relleno.
+    framebuffer.set_current_color(0xFFFFFF);
+    framebuffer.polygon(&estrella);
 
     let _ = framebuffer.render_buffer("output.bmp");
 

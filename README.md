@@ -1,24 +1,24 @@
-# 03 — Software Rendering: Polygon
+# 04 — Software Rendering: Filled Polygon
 
-Tercera etapa de gráficas del curso **cc2018 – Gráficas por Computadora** (UVG). Se dibujan contornos de polígonos a partir de una lista de vértices, reutilizando el algoritmo de líneas de la etapa anterior.
+Cuarta etapa de gráficas del curso **cc2018 – Gráficas por Computadora** (UVG). Se rellena el interior de un polígono mediante un algoritmo de scanline. En esta etapa la geometría migra a vectores `Vec3` (con `nalgebra-glm`), base sobre la que se construyen las fases posteriores.
 
 ## Objetivo
 
-- Representar un polígono como una secuencia ordenada de vértices.
-- Trazar su contorno uniendo cada vértice con el siguiente y cerrando la figura del último al primero.
-- Reutilizar el trazado de líneas y la escritura BMP existentes para exportar el resultado.
+- Migrar el trazado de líneas y polígonos a vectores `Vec3` de `nalgebra-glm`.
+- Implementar el relleno de polígonos por scanline: para cada línea horizontal, calcular las intersecciones con las aristas y colorear los píxeles entre cada par (regla par/impar).
+- Combinar relleno y contorno, y exportar el resultado como archivo BMP.
 
 ## Estructura
 
 ```
 .
-├── Cargo.toml          # Manifiesto del proyecto
+├── Cargo.toml          # Manifiesto del proyecto (incluye nalgebra-glm)
 ├── Cargo.lock          # Versiones exactas de las dependencias
 └── src
-    ├── main.rs         # Punto de entrada; define y dibuja los polígonos
+    ├── main.rs         # Punto de entrada; rellena y dibuja el polígono
     ├── framebuffer.rs  # Buffer de píxeles en memoria
-    ├── line.rs         # Algoritmo de Bresenham
-    ├── polygon.rs      # Contorno de polígonos a partir de vértices
+    ├── line.rs         # Algoritmo de Bresenham sobre Vec3
+    ├── polygon.rs      # Contorno y relleno por scanline
     └── bmp.rs          # Escritura del framebuffer a un archivo BMP
 ```
 
@@ -28,7 +28,7 @@ Tercera etapa de gráficas del curso **cc2018 – Gráficas por Computadora** (U
     ```bash
     git clone https://github.com/menene/cc2018-2026-02-10.git
     cd cc2018-2026-02-10
-    git checkout 03-SR-03-POLYGON
+    git checkout 04-SR-04-FILLED-POLYGON
     ```
 
 2. Compilar y ejecutar:
@@ -36,12 +36,13 @@ Tercera etapa de gráficas del curso **cc2018 – Gráficas por Computadora** (U
     cargo run
     ```
 
-3. Revisar el archivo `output.bmp` en el directorio del proyecto para ver los polígonos dibujados.
+3. Revisar el archivo `output.bmp` en el directorio del proyecto para ver el polígono relleno.
 
 ## Recursos
 
 - [Rust Programming Language](https://www.rust-lang.org/)
+- [nalgebra-glm](https://docs.rs/nalgebra-glm/)
 - [Framebuffer](https://en.wikipedia.org/wiki/Framebuffer)
 - [BMP File Format](https://en.wikipedia.org/wiki/BMP_file_format)
-- [Raster Graphics](https://en.wikipedia.org/wiki/Raster_graphics)
-- [Polygon](https://en.wikipedia.org/wiki/Polygon)
+- [Scanline Rendering](https://en.wikipedia.org/wiki/Scanline_rendering)
+- [Even–odd rule](https://en.wikipedia.org/wiki/Even%E2%80%93odd_rule)
