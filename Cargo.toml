@@ -1,5 +1,5 @@
 [package]
-name = "rc_01_maze_loader"
+name = "rc_02_maze_player"
 version = "0.1.0"
 edition = "2021"
 

@@ -11,7 +11,7 @@ use std::time::Duration;
 use crate::caster::cast_ray;
 use crate::framebuffer::Framebuffer;
 use crate::maze::{load_maze, Maze};
-use crate::player::Player;
+use crate::player::{process_events, Player};
 
 const BLOCK_SIZE: usize = 100;
 
@@ -74,12 +74,14 @@ fn main() {
     )
     .unwrap();
 
-    let player = Player {
+    let mut player = Player {
         pos: Vec2::new(150.0, 150.0),
         a: PI / 3.0,
     };
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
+        process_events(&window, &mut player);
+
         framebuffer.clear();
 
         render(&mut framebuffer, &maze, &player);

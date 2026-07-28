@@ -1,16 +1,22 @@
-# 07 — Raycasting: Cargador de Laberinto
+# 08 — Raycasting: Controlador del Jugador
 
-Primera etapa de la fase de **Raycasting** del curso **cc2018 – Gráficas por Computadora** (UVG). Se construye el mundo 2D sobre el que operará el motor: un laberinto se **carga desde un archivo de texto**, se dibuja como una rejilla de bloques en el framebuffer, y desde la posición del jugador se **lanza un rayo** que avanza hasta chocar con una pared. Es el cimiento de la vista en primera persona de las etapas siguientes.
+Segunda etapa de la fase de **Raycasting** del curso **cc2018 – Gráficas por Computadora** (UVG). Sobre el mundo 2D de la etapa anterior se agrega el **control del jugador**: el teclado modifica en cada cuadro su posición y su ángulo de vista, y el rayo que parte de él sigue esa dirección. Es la base interactiva sobre la que se construyen el campo de visión y la vista en primera persona.
 
 ## Objetivo
 
-- Cargar un laberinto desde un archivo de texto (`maze.txt`) hacia una matriz de caracteres.
-- Dibujar el mundo 2D como una rejilla de bloques, tratando cada carácter distinto de un espacio como pared.
-- Lanzar un rayo desde el jugador en la dirección de su ángulo de vista y detenerlo al encontrar una pared.
+- Leer el teclado dentro del ciclo de render y actualizar el estado del jugador cuadro a cuadro.
+- Avanzar y retroceder al jugador en la dirección de su ángulo de vista.
+- Girar el ángulo de vista y confirmar que el rayo lanzado se reorienta con él.
 
-## El laberinto
+## Controles
 
-El archivo `maze.txt` describe el laberinto con caracteres: los espacios (` `) son piso transitable y cualquier otro carácter (`+`, `-`, `|`) es pared. La letra `g` marca la meta.
+| Tecla | Acción |
+| ----- | ------ |
+| `W` | Avanzar en la dirección de vista |
+| `S` | Retroceder |
+| `A` | Girar a la izquierda |
+| `D` | Girar a la derecha |
+| `Escape` | Salir |
 
 ## Estructura
 
@@ -20,10 +26,10 @@ El archivo `maze.txt` describe el laberinto con caracteres: los espacios (` `) s
 ├── Cargo.lock          # Versiones exactas de las dependencias
 ├── maze.txt            # Definición del laberinto en texto
 └── src
-    ├── main.rs         # Punto de entrada; carga, ciclo de render y dibujo del mundo
+    ├── main.rs         # Punto de entrada; ciclo de render, entrada y dibujo del mundo
     ├── framebuffer.rs  # Buffer de píxeles en memoria
     ├── maze.rs         # Carga del laberinto desde archivo de texto
-    ├── player.rs       # Estado del jugador (posición y ángulo de vista)
+    ├── player.rs       # Estado del jugador y lectura del teclado
     └── caster.rs       # Lanzamiento de un rayo sobre el laberinto
 ```
 
@@ -33,7 +39,7 @@ El archivo `maze.txt` describe el laberinto con caracteres: los espacios (` `) s
     ```bash
     git clone https://github.com/menene/cc2018-2026-02-10.git
     cd cc2018-2026-02-10
-    git checkout 07-RC-01-MAZE-LOADER
+    git checkout 08-RC-02-MAZE-PLAYER
     ```
 
 2. Compilar y ejecutar:
@@ -41,7 +47,7 @@ El archivo `maze.txt` describe el laberinto con caracteres: los espacios (` `) s
     cargo run
     ```
 
-3. Se abre una ventana con el laberinto dibujado, el jugador y el rayo que parte de él. Cerrar con `Escape` o con el botón de cerrar de la ventana.
+3. Se abre una ventana con el laberinto y el jugador. Mover con `W`/`A`/`S`/`D` y observar cómo el rayo sigue la dirección de vista. Cerrar con `Escape` o con el botón de cerrar de la ventana.
 
 ## Recursos
 
