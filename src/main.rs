@@ -11,12 +11,22 @@ use crate::player::Player;
 
 const BLOCK_SIZE: usize = 100;
 
+fn cell_color(cell: char) -> u32 {
+    match cell {
+        '+' => 0x00AAFF, // columnas
+        '-' => 0xFF5555, // paredes horizontales
+        '|' => 0xFF5555, // paredes verticales
+        'g' | 'G' => 0x00FF00, // meta
+        _ => 0xFFDDDD,   // cualquier otra cosa
+    }
+}
+
 fn draw_cell(framebuffer: &mut Framebuffer, xo: usize, yo: usize, cell: char) {
     if cell == ' ' {
         return;
     }
 
-    framebuffer.set_current_color(0xFFDDDD);
+    framebuffer.set_current_color(cell_color(cell));
 
     for x in xo..xo + BLOCK_SIZE {
         for y in yo..yo + BLOCK_SIZE {
@@ -51,8 +61,7 @@ fn main() {
     let framebuffer_height = 900;
     let frame_delay = Duration::from_millis(16);
 
-    let mut maze = load_maze("./maze.txt");
-    let player = Player::from_maze(&mut maze, BLOCK_SIZE);
+    let (maze, player) = load_maze("./maze.txt", BLOCK_SIZE);
 
     let mut framebuffer = Framebuffer::new(framebuffer_width, framebuffer_height);
     framebuffer.set_background_color(0x333355);
