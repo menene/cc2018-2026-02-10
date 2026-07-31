@@ -3,14 +3,10 @@ use nalgebra_glm::Vec2;
 use std::f32::consts::PI;
 
 pub struct Player {
-    /// Posición del jugador en el mundo 2D, en píxeles.
     pub pos: Vec2,
-    /// Ángulo de vista, en radianes.
     pub a: f32,
 }
 
-/// Lee el teclado y actualiza el estado del jugador en cada cuadro:
-/// `W`/`S` avanzan y retroceden en la dirección de vista; `A`/`D` giran.
 pub fn process_events(window: &Window, player: &mut Player) {
     const MOVE_SPEED: f32 = 10.0;
     const ROTATION_SPEED: f32 = PI / 10.0;

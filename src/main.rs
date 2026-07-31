@@ -4,6 +4,7 @@ mod maze;
 mod player;
 
 use minifb::{Key, Window, WindowOptions};
+use std::f32::consts::PI;
 use std::time::Duration;
 
 use crate::caster::cast_ray;
@@ -12,6 +13,12 @@ use crate::maze::{load_maze, Maze};
 use crate::player::{process_events, Player};
 
 const BLOCK_SIZE: usize = 100;
+
+/// Cantidad de rayos que se lanzan en abanico para formar el campo de visión.
+const NUM_RAYS: usize = 5;
+
+/// Amplitud del campo de visión (field of view), en radianes.
+const FOV: f32 = PI / 3.0;
 
 fn cell_color(cell: char) -> u32 {
     match cell {
@@ -55,8 +62,15 @@ fn render(framebuffer: &mut Framebuffer, maze: &Maze, player: &Player) {
         }
     }
 
-    // lanza un rayo en la dirección de vista del jugador
-    cast_ray(framebuffer, maze, player, player.a, BLOCK_SIZE);
+    // lanza un abanico de rayos centrado en la dirección de vista del jugador.
+    // El campo de visión (FOV) se reparte de forma pareja entre los NUM_RAYS
+    // rayos: el primero apunta a `a - FOV/2`, el último a `a + FOV/2` y el del
+    // medio coincide con la dirección de vista.
+    for i in 0..NUM_RAYS {
+        let ray_fraction = i as f32 / (NUM_RAYS - 1) as f32; // de 0.0 a 1.0
+        let angle = player.a - FOV / 2.0 + FOV * ray_fraction;
+        cast_ray(framebuffer, maze, player, angle, BLOCK_SIZE);
+    }
 }
 
 fn main() {
@@ -81,6 +95,15 @@ fn main() {
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         process_events(&window, &mut player);
+
+        // ¿el jugador llegó a la meta? Se traduce su posición en píxeles a la
+        // celda que ocupa y se revisa si esa celda es la marca `g`.
+        let i = player.pos.x as usize / BLOCK_SIZE;
+        let j = player.pos.y as usize / BLOCK_SIZE;
+        if maze.get(j).and_then(|row| row.get(i)) == Some(&'g') {
+            println!("¡Meta alcanzada! Fin del juego.");
+            break;
+        }
 
         framebuffer.clear();
 
