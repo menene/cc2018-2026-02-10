@@ -1,6 +1,6 @@
-# 08 — Raycasting: Controlador del Jugador
+# 09 — Raycasting: Movimiento del Jugador
 
-Segunda etapa de la fase de **Raycasting** del curso **cc2018 – Gráficas por Computadora** (UVG). Sobre el mundo 2D de la etapa anterior se agrega el **control del jugador**: el teclado modifica en cada cuadro su posición y su ángulo de vista, y el rayo que parte de él sigue esa dirección. Es la base interactiva sobre la que se construyen el campo de visión y la vista en primera persona.
+Tercera etapa de la fase de **Raycasting** del curso **cc2018 – Gráficas por Computadora** (UVG). En la etapa anterior el jugador aparecía en el laberinto con un rayo estático; ahora se agrega el **control del jugador**: el teclado modifica en cada cuadro su posición y su ángulo de vista, y el rayo que parte de él sigue esa dirección. Es la base interactiva sobre la que se construyen el campo de visión y la vista en primera persona.
 
 ## Objetivo
 
@@ -39,7 +39,7 @@ Segunda etapa de la fase de **Raycasting** del curso **cc2018 – Gráficas por 
     ```bash
     git clone https://github.com/menene/cc2018-2026-02-10.git
     cd cc2018-2026-02-10
-    git checkout 08-RC-02-MAZE-PLAYER
+    git checkout 09-RC-03-MAZE-MOVEMENT
     ```
 
 2. Compilar y ejecutar:

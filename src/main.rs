@@ -9,7 +9,7 @@ use std::time::Duration;
 use crate::caster::cast_ray;
 use crate::framebuffer::Framebuffer;
 use crate::maze::{load_maze, Maze};
-use crate::player::Player;
+use crate::player::{process_events, Player};
 
 const BLOCK_SIZE: usize = 100;
 
@@ -66,7 +66,7 @@ fn main() {
     let framebuffer_height = 900;
     let frame_delay = Duration::from_millis(16);
 
-    let (maze, player) = load_maze("./maze.txt", BLOCK_SIZE);
+    let (maze, mut player) = load_maze("./maze.txt", BLOCK_SIZE);
 
     let mut framebuffer = Framebuffer::new(framebuffer_width, framebuffer_height);
     framebuffer.set_background_color(0x333355);
@@ -80,6 +80,8 @@ fn main() {
     .unwrap();
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
+        process_events(&window, &mut player);
+
         framebuffer.clear();
 
         render(&mut framebuffer, &maze, &player);
