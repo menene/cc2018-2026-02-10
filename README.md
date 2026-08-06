@@ -1,12 +1,13 @@
 # 09 — Raycasting: Movimiento del Jugador
 
-Tercera etapa de la fase de **Raycasting** del curso **cc2018 – Gráficas por Computadora** (UVG). En la etapa anterior el jugador aparecía en el laberinto con un rayo estático; ahora se agrega el **control del jugador**: el teclado modifica en cada cuadro su posición y su ángulo de vista, y el rayo que parte de él sigue esa dirección. Es la base interactiva sobre la que se construyen el campo de visión y la vista en primera persona.
+Tercera etapa de la fase de **Raycasting** del curso **cc2018 – Gráficas por Computadora** (UVG). En la etapa anterior el jugador aparecía en el laberinto con un rayo estático; ahora se agrega el **control del jugador**: el teclado modifica en cada cuadro su posición y su ángulo de vista. Sobre esa base se lanza un **abanico de rayos** que cubre el campo de visión, y se detecta la llegada a la meta. Con el campo de visión ya resuelto, lo que falta para la vista en primera persona es proyectar cada rayo como una columna en pantalla.
 
 ## Objetivo
 
 - Leer el teclado dentro del ciclo de render y actualizar el estado del jugador cuadro a cuadro.
-- Avanzar y retroceder al jugador en la dirección de su ángulo de vista.
-- Girar el ángulo de vista y confirmar que el rayo lanzado se reorienta con él.
+- Avanzar y retroceder al jugador en la dirección de su ángulo de vista, y girar ese ángulo.
+- Lanzar un abanico de rayos repartido de forma pareja sobre el campo de visión.
+- Detectar que el jugador llegó a la meta y terminar el juego.
 
 ## Controles
 
@@ -18,6 +19,30 @@ Tercera etapa de la fase de **Raycasting** del curso **cc2018 – Gráficas por 
 | `D` | Girar a la derecha |
 | `Escape` | Salir |
 
+El movimiento se calcula con el ángulo de vista, de modo que avanzar siempre ocurre hacia donde el jugador está viendo:
+
+```
+pos.x += MOVE_SPEED * cos(a)
+pos.y += MOVE_SPEED * sin(a)
+```
+
+En esta etapa no hay detección de colisiones: el jugador atraviesa las paredes.
+
+## El campo de visión
+
+Hasta ahora se lanzaba un solo rayo, en la dirección exacta de la vista. El **campo de visión** (`FOV`, *field of view*) es el ángulo total que abarca lo que el jugador alcanza a ver, y se cubre repartiendo `NUM_RAYS` rayos de forma pareja dentro de ese ángulo:
+
+```
+fracción = i / (NUM_RAYS - 1)        // de 0.0 a 1.0
+ángulo   = a - FOV/2 + FOV * fracción
+```
+
+El primer rayo apunta a `a - FOV/2`, el último a `a + FOV/2` y el de en medio coincide con la dirección de vista. Con `NUM_RAYS = 5` el abanico se ve como cinco líneas separadas; en la vista en primera persona se lanzará un rayo por cada columna de píxeles de la pantalla, y la distancia recorrida por cada uno definirá la altura de la pared en esa columna.
+
+## La meta
+
+En cada cuadro la posición del jugador en píxeles se traduce a la celda que ocupa. Si esa celda es la marca `g`, el juego termina.
+
 ## Estructura
 
 ```
@@ -28,9 +53,9 @@ Tercera etapa de la fase de **Raycasting** del curso **cc2018 – Gráficas por 
 └── src
     ├── main.rs         # Punto de entrada; ciclo de render, entrada y dibujo del mundo
     ├── framebuffer.rs  # Buffer de píxeles en memoria
-    ├── maze.rs         # Carga del laberinto desde archivo de texto
+    ├── maze.rs         # Carga del laberinto y estado inicial del jugador
     ├── player.rs       # Estado del jugador y lectura del teclado
-    └── caster.rs       # Lanzamiento de un rayo sobre el laberinto
+    └── caster.rs       # Lanzamiento de un rayo en un ángulo dado
 ```
 
 ## Cómo correr
@@ -47,7 +72,7 @@ Tercera etapa de la fase de **Raycasting** del curso **cc2018 – Gráficas por 
     cargo run
     ```
 
-3. Se abre una ventana con el laberinto y el jugador. Mover con `W`/`A`/`S`/`D` y observar cómo el rayo sigue la dirección de vista. Cerrar con `Escape` o con el botón de cerrar de la ventana.
+3. Se abre una ventana con el laberinto y el jugador. Mover con `W`/`A`/`S`/`D` y observar cómo el abanico de rayos gira y se recorta contra las paredes. Al llegar a la celda marcada con `g` el programa avisa en la terminal y termina. Cerrar con `Escape` o con el botón de cerrar de la ventana.
 
 ## Recursos
 
