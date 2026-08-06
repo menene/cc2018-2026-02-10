@@ -61,8 +61,8 @@ Las primeras etapas de Software Rendering escriben una imagen (por ejemplo `outp
 | Rama | Descripción |
 |------|-------------|
 | `07-RC-01-MAZE-LOADER` | Cargar laberinto desde archivo de texto; mundo 2D y cast ray |
-| `08-RC-02-MAZE-PLAYER` | Controlador del jugador |
-| `09-RC-03-MAZE-FIELD-VIEW` | Campo de visión en primera persona |
+| `08-RC-02-MAZE-PLAYER` | Estructura del jugador y un rayo estático en su dirección de vista |
+| `09-RC-03-MAZE-MOVEMENT` | Control del jugador por teclado y abanico de rayos del campo de visión |
 | `10-RC-04-MAZE-EVENTS` | Eventos de entrada, texturas y sprites |
 
 ### Fase 3 · Raytracing
