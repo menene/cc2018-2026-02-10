@@ -1,13 +1,14 @@
-# 09 — Raycasting: Movimiento del Jugador
+# 10 — Raycasting: Vista en Primera Persona
 
-Tercera etapa de la fase de **Raycasting** del curso **cc2018 – Gráficas por Computadora** (UVG). En la etapa anterior el jugador aparecía en el laberinto con un rayo estático; ahora se agrega el **control del jugador**: el teclado modifica en cada cuadro su posición y su ángulo de vista. Sobre esa base se lanza un **abanico de rayos** que cubre el campo de visión, y se detecta la llegada a la meta. Con el campo de visión ya resuelto, lo que falta para la vista en primera persona es proyectar cada rayo como una columna en pantalla.
+Cuarta etapa de la fase de **Raycasting** del curso **cc2018 – Gráficas por Computadora** (UVG). Hasta la etapa anterior el laberinto se veía desde arriba y el campo de visión era un abanico de cinco rayos dibujados sobre el piso. Aquí ese mismo abanico se convierte en la **vista en primera persona**: se lanza un rayo por cada columna de píxeles de la pantalla y cada uno se dibuja como una **estaca vertical** cuya altura depende de la distancia que recorrió. Se agrega también la **corrección del efecto de ojo de pez**, que se puede encender y apagar para comparar.
 
 ## Objetivo
 
-- Leer el teclado dentro del ciclo de render y actualizar el estado del jugador cuadro a cuadro.
-- Avanzar y retroceder al jugador en la dirección de su ángulo de vista, y girar ese ángulo.
-- Lanzar un abanico de rayos repartido de forma pareja sobre el campo de visión.
-- Detectar que el jugador llegó a la meta y terminar el juego.
+- Devolver desde el lanzamiento de un rayo la distancia recorrida y el carácter contra el que chocó.
+- Lanzar un rayo por cada columna de la pantalla y dibujar cada uno como una estaca vertical.
+- Calcular la altura de la estaca a partir de la distancia y de la distancia al plano de proyección.
+- Corregir el efecto de ojo de pez proyectando la distancia sobre la dirección de vista.
+- Impedir que el jugador atraviese las paredes.
 
 ## Controles
 
@@ -17,31 +18,51 @@ Tercera etapa de la fase de **Raycasting** del curso **cc2018 – Gráficas por 
 | `S` | Retroceder |
 | `A` | Girar a la izquierda |
 | `D` | Girar a la derecha |
+| `M` | Cambiar entre la vista 2D y la vista 3D |
+| `F` | Encender o apagar la corrección de ojo de pez |
 | `Escape` | Salir |
 
-El movimiento se calcula con el ángulo de vista, de modo que avanzar siempre ocurre hacia donde el jugador está viendo:
+El título de la ventana indica en todo momento qué vista está activa y si la corrección está encendida.
+
+## De rayos a estacas
+
+El lanzamiento de un rayo ahora devuelve un `Intersect` con dos datos: la **distancia** recorrida hasta chocar y el **carácter** de la celda contra la que chocó. La distancia define la altura de la pared y el carácter define su color, que es lo que mantiene distinguibles las paredes del laberinto.
+
+En la vista 3D se lanza un rayo por cada columna de píxeles, con el mismo reparto de ángulos de la etapa anterior. Lo que cambia es qué se hace con el resultado: en lugar de pintar el recorrido del rayo sobre el piso, se dibuja una línea vertical en la columna que le corresponde.
+
+La altura de esa estaca sale de una proporción. Una pared mide `BLOCK_SIZE` en el mundo; en pantalla se ve más alta mientras más cerca esté:
 
 ```
-pos.x += MOVE_SPEED * cos(a)
-pos.y += MOVE_SPEED * sin(a)
+altura = (BLOCK_SIZE / distancia) * distancia_al_plano_de_proyección
 ```
 
-En esta etapa no hay detección de colisiones: el jugador atraviesa las paredes.
-
-## El campo de visión
-
-Hasta ahora se lanzaba un solo rayo, en la dirección exacta de la vista. El **campo de visión** (`FOV`, *field of view*) es el ángulo total que abarca lo que el jugador alcanza a ver, y se cubre repartiendo `NUM_RAYS` rayos de forma pareja dentro de ese ángulo:
+La **distancia al plano de proyección** es la distancia a la que habría que poner una pantalla del ancho de la ventana para que abarque exactamente el campo de visión:
 
 ```
-fracción = i / (NUM_RAYS - 1)        // de 0.0 a 1.0
-ángulo   = a - FOV/2 + FOV * fracción
+distancia_al_plano = (ancho / 2) / tan(FOV / 2)
 ```
 
-El primer rayo apunta a `a - FOV/2`, el último a `a + FOV/2` y el de en medio coincide con la dirección de vista. Con `NUM_RAYS = 5` el abanico se ve como cinco líneas separadas; en la vista en primera persona se lanzará un rayo por cada columna de píxeles de la pantalla, y la distancia recorrida por cada uno definirá la altura de la pared en esa columna.
+Definirla así, y no como un número fijo, hace que cambiar el `FOV` siga produciendo una imagen consistente. La estaca se centra verticalmente en la pantalla y se recorta contra sus orillas, de modo que una pared muy cercana simplemente llena toda la columna.
 
-## La meta
+## El efecto de ojo de pez
 
-En cada cuadro la posición del jugador en píxeles se traduce a la celda que ocupa. Si esa celda es la marca `g`, el juego termina.
+La distancia que devuelve el rayo se mide **a lo largo del rayo**, no a lo largo de la dirección de vista. Frente a una pared plana los rayos de las orillas del abanico llegan en diagonal y por lo tanto recorren más camino que el rayo del centro, aunque la pared esté igual de lejos. Como la altura depende de la distancia, esas estacas salen más bajas y la pared recta se ve **curveada hacia adentro**, como a través de un lente de ojo de pez.
+
+La corrección consiste en proyectar la distancia sobre la dirección de vista, multiplicándola por el coseno de la diferencia entre el ángulo del rayo y el ángulo del jugador:
+
+```
+distancia_corregida = distancia * cos(ángulo_del_rayo - ángulo_del_jugador)
+```
+
+Frente a una pared plana a 250 píxeles, sin corregir la altura de las estacas varía unos 60 píxeles entre el centro y las orillas de la pantalla; con la corrección la variación es cero y la pared se ve recta. La tecla `F` permite alternar entre las dos versiones sin dejar de caminar, que es la forma más clara de ver la diferencia.
+
+## Colisiones
+
+En las etapas anteriores el jugador atravesaba las paredes. Ahora, antes de aceptar un movimiento, se revisa a qué celda del laberinto correspondería la nueva posición: si esa celda no es piso transitable, el movimiento se descarta.
+
+La revisión no se hace sobre un solo punto sino sobre cuatro, separados del centro por el radio del jugador, de modo que el jugador se detenga antes de que su dibujo quede encajado en la pared. Los ejes se revisan por separado: primero el desplazamiento en `x` y después el desplazamiento en `y`. Así, al caminar en diagonal contra una pared, el eje bloqueado se descarta y el otro sigue avanzando, y el jugador se desliza a lo largo de la pared en lugar de quedarse pegado.
+
+La celda de la meta cuenta como piso transitable. Si se tratara como pared, el jugador nunca podría pararse sobre ella y la condición de victoria jamás se cumpliría.
 
 ## Estructura
 
@@ -51,12 +72,14 @@ En cada cuadro la posición del jugador en píxeles se traduce a la celda que oc
 ├── Cargo.lock          # Versiones exactas de las dependencias
 ├── maze.txt            # Definición del laberinto en texto
 └── src
-    ├── main.rs         # Punto de entrada; ciclo de render, entrada y dibujo del mundo
+    ├── main.rs         # Punto de entrada; ciclo de render, entrada y las dos vistas
     ├── framebuffer.rs  # Buffer de píxeles en memoria
     ├── maze.rs         # Carga del laberinto y estado inicial del jugador
-    ├── player.rs       # Estado del jugador y lectura del teclado
-    └── caster.rs       # Lanzamiento de un rayo en un ángulo dado
+    ├── player.rs       # Estado del jugador, lectura del teclado y colisiones
+    └── caster.rs       # Lanzamiento de un rayo; devuelve distancia e impacto
 ```
+
+Lanzar un rayo por columna son cientos de miles de operaciones por cuadro, así que el manifiesto activa optimizaciones (`opt-level = 3`) incluso en las compilaciones de desarrollo.
 
 ## Cómo correr
 
@@ -64,7 +87,7 @@ En cada cuadro la posición del jugador en píxeles se traduce a la celda que oc
     ```bash
     git clone https://github.com/menene/cc2018-2026-02-10.git
     cd cc2018-2026-02-10
-    git checkout 09-RC-03-MAZE-MOVEMENT
+    git checkout 10-RC-04-MAZE-3D-VIEW
     ```
 
 2. Compilar y ejecutar:
@@ -72,7 +95,7 @@ En cada cuadro la posición del jugador en píxeles se traduce a la celda que oc
     cargo run
     ```
 
-3. Se abre una ventana con el laberinto y el jugador. Mover con `W`/`A`/`S`/`D` y observar cómo el abanico de rayos gira y se recorta contra las paredes. Al llegar a la celda marcada con `g` el programa avisa en la terminal y termina. Cerrar con `Escape` o con el botón de cerrar de la ventana.
+3. Se abre una ventana con el laberinto visto desde adentro. Caminar con `W`/`A`/`S`/`D` y observar cómo las paredes crecen al acercarse y cómo el jugador se detiene al chocar contra ellas. Con `M` se cambia a la vista 2D para ver de dónde sale la imagen, y con `F` se apaga la corrección para ver las paredes curvearse. Cerrar con `Escape` o con el botón de cerrar de la ventana.
 
 ## Recursos
 
