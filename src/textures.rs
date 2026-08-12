@@ -1,5 +1,12 @@
 use std::collections::HashMap;
 
+/// Color que los sprites usan para marcar sus píxeles transparentes.
+///
+/// El PNG del enemigo trae canal alfa, pero está opaco de punta a punta: el
+/// fondo no es «nada», es un magenta concreto que nunca aparece en el dibujo.
+/// La transparencia se decide entonces comparando el color, no leyendo alfa.
+pub const TRANSPARENT: u32 = 0x980088;
+
 /// Una textura ya decodificada y guardada en memoria: los píxeles viven en el
 /// mismo formato `0xRRGGBB` que usa el `Framebuffer`, así que muestrear una
 /// textura no requiere ninguna conversión durante el render.
@@ -8,6 +15,8 @@ pub struct Texture {
     height: usize,
     pixels: Vec<u32>,
 }
+
+
 
 impl Texture {
     fn load(path: &str) -> Texture {
@@ -32,7 +41,7 @@ impl Texture {
 
     /// Devuelve el color en coordenadas de textura normalizadas: `u` y `v`
     /// van de 0 a 1 sin importar cuántos píxeles mida la imagen.
-    fn sample(&self, u: f32, v: f32) -> u32 {
+    pub fn sample(&self, u: f32, v: f32) -> u32 {
         let x = ((u * self.width as f32) as usize).min(self.width - 1);
         let y = ((v * self.height as f32) as usize).min(self.height - 1);
 
@@ -54,6 +63,7 @@ impl TextureManager {
             ('-', "assets/wall2.png"),
             ('|', "assets/wall1.png"),
             ('g', "assets/wall5.png"),
+            ('e', "assets/sprite1.png"),
         ];
 
         let mut textures = HashMap::new();
@@ -68,10 +78,12 @@ impl TextureManager {
         }
     }
 
-    pub fn sample(&self, cell: char, u: f32, v: f32) -> u32 {
-        self.textures
-            .get(&cell)
-            .unwrap_or(&self.fallback)
-            .sample(u, v)
+    /// Busca la textura de un carácter.
+    ///
+    /// La búsqueda se hace **una vez por pared o por sprite**, nunca por
+    /// píxel: cada estaca y cada enemigo pide aquí su textura y después
+    /// muestrea cientos de miles de veces sobre la referencia devuelta.
+    pub fn get(&self, cell: char) -> &Texture {
+        self.textures.get(&cell).unwrap_or(&self.fallback)
     }
 }

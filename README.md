@@ -1,14 +1,15 @@
-# 11 — Raycasting: Texturas
+# 12 — Raycasting: Sprites
 
-Quinta etapa de la fase de **Raycasting** del curso **cc2018 – Gráficas por Computadora** (UVG). En la etapa anterior cada columna de la pantalla se pintaba de un solo color, elegido según el carácter de la celda contra la que chocó el rayo. Aquí ese color deja de ser fijo: se lee de una **imagen** cargada desde el disco. Para lograrlo, el rayo debe reportar no solo *contra qué* chocó sino *en qué punto exacto* de la pared lo hizo.
+Sexta etapa de la fase de **Raycasting** del curso **cc2018 – Gráficas por Computadora** (UVG). Hasta aquí el mundo estaba hecho solo de paredes, y una pared siempre está alineada a la retícula del laberinto: el rayo la encuentra y la dibuja en la columna que le toca. Un **sprite** no funciona así. No está alineado a nada, ningún rayo lo busca, y sin embargo tiene que aparecer del tamaño correcto, en la columna correcta y —lo más difícil— **detrás de las paredes que lo tapan**.
 
 ## Objetivo
 
-- Decodificar imágenes PNG y guardarlas en memoria en el mismo formato del `Framebuffer`.
-- Calcular la coordenada horizontal de textura a partir del punto de impacto del rayo.
-- Distinguir contra cuál de las caras de la celda chocó el rayo.
-- Orientar la textura de modo que no salga espejeada según la dirección de vista.
-- Calcular la coordenada vertical contra la estaca completa y no contra el pedazo visible.
+- Colocar enemigos en el mundo desde el archivo del laberinto.
+- Proyectar una posición del mundo a una columna de la pantalla.
+- Escalar el sprite con la misma fórmula que las paredes.
+- Recortar el sprite contra las paredes usando un buffer de profundidad.
+- Dibujar con transparencia por color clave.
+- Ordenar los sprites entre sí de atrás hacia adelante.
 
 ## Controles
 
@@ -24,83 +25,125 @@ Quinta etapa de la fase de **Raycasting** del curso **cc2018 – Gráficas por C
 | `P` | Encender o apagar el reporte en consola |
 | `Escape` | Salir |
 
-La tecla `T` alterna entre las paredes de color plano de la etapa anterior y las paredes con textura, que es la forma más directa de ver qué agregó esta etapa.
+En la vista 2D los enemigos aparecen como puntos magenta sobre el mapa, lo que permite comparar dónde están con cómo se ven desde adentro.
 
-## Cargar las texturas
+## Enemigos en el laberinto
 
-Decodificar PNG a mano no es el tema de esta etapa, así que se agrega la dependencia [`image`](https://docs.rs/image/) limitada al formato PNG:
+Los enemigos se colocan desde `maze.txt`, igual que el jugador. El carácter `e` marca una posición y deja la celda como **piso transitable**: un enemigo no es geometría, no detiene los rayos y no detiene al jugador.
 
-```toml
-image = { version = "0.25", default-features = false, features = ["png"] }
+```
++--+--+--+--+
+|p          |
++  +--+  +  +
+|  |  e  |  |
++  +  +--+--+
+|  |     e  |
++  +--+--+  +
+|  e     | g|
++--+--+--+--+
 ```
 
-Lo que sí importa es **cómo** se guarda lo decodificado. El `Framebuffer` trabaja con colores empacados en un `u32` como `0xRRGGBB`, así que la textura se convierte a ese formato una sola vez al cargarla:
+`load_maze` ya hacía exactamente esto con la `p` del jugador, así que agregar enemigos es extender ese mismo `match` con un caso más. Un enemigo queda descrito por su posición y por el carácter con el que el `TextureManager` encuentra su imagen — el mismo mapa de texturas de la etapa anterior, con una entrada nueva para `e`.
+
+## De una posición a una columna
+
+Una pared se dibuja en la columna del rayo que la encontró. Con un sprite hay que hacer el camino inverso: partir de su posición y calcular en qué columna cae.
+
+El primer paso es el ángulo del enemigo visto desde el jugador, y qué tanto se desvía de la dirección de vista:
+
+```
+ángulo_del_enemigo = atan2(enemigo.y − jugador.y, enemigo.x − jugador.x)
+desvío = ángulo_del_enemigo − ángulo_del_jugador
+```
+
+Esa resta necesita **normalizarse** a `-π..π`. Los dos ángulos crecen sin límite conforme el jugador gira, así que un enemigo que está justo enfrente puede dar una diferencia de casi una vuelta completa; sin normalizar, el sprite desaparecería según cuántas vueltas lleve dado el jugador.
+
+Con el desvío ya normalizado, la columna sale de una interpolación lineal. Esto funciona porque los rayos se reparten **linealmente en el ángulo**: la columna `i` corresponde al ángulo `a − FOV/2 + FOV · i/(ancho−1)`, así que despejar `i` es despejar una recta:
+
+```
+columna = (desvío / FOV + 0.5) · (ancho − 1)
+```
+
+Antes de proyectar hay que descartar a los enemigos que están al costado o a la espalda. Pasado un cuarto de vuelta la relación entre ángulo y columna deja de tener sentido, y un enemigo detrás del jugador produciría una columna cualquiera dentro de la pantalla.
+
+El tamaño usa la **misma fórmula que las estacas** de las paredes, con la misma distancia al plano de proyección:
+
+```
+tamaño = (BLOCK_SIZE / distancia) · distancia_al_plano_de_proyección
+```
+
+Usar la misma fórmula no es un detalle de estilo: es lo que hace que un enemigo y una pared que están a la misma distancia se vean del mismo alto. La distancia que entra ahí es la **perpendicular** a la dirección de vista, `distancia · cos(desvío)`, por la misma razón que en las paredes — si se usara la distancia en línea recta, el enemigo crecería al moverse hacia la orilla de la pantalla sin haberse acercado.
+
+## El buffer de profundidad
+
+Este es el problema central de la etapa. Los sprites se dibujan **después** de las paredes, así que por omisión quedan encima de ellas: un enemigo al otro lado de una pared se ve flotando sobre ella.
+
+La información que hace falta ya se calculó y se tiró a la basura. Al dibujar las paredes, cada columna de la pantalla supo exactamente a qué distancia estaba su pared. Basta con **guardarla**:
 
 ```rust
-let pixels = image
-    .pixels()
-    .map(|p| ((p[0] as u32) << 16) | ((p[1] as u32) << 8) | p[2] as u32)
-    .collect();
+let mut depth = vec![f32::INFINITY; framebuffer_width];
 ```
 
-Muestrear la textura durante el render queda entonces reducido a un acceso a un `Vec<u32>`, sin ninguna conversión de color. Esto importa porque el muestreo ocurre una vez **por píxel de pared**: con estacas de varios cientos de píxeles en 1300 columnas, son cientos de miles de muestreos por cuadro.
+`render_world` anota en `depth[i]` la distancia de la pared de cada columna, e `INFINITY` donde no hubo pared. Después, al dibujar un sprite, cada una de sus columnas se compara contra ese valor:
 
-Las imágenes se leen del disco una sola vez, antes de que arranque el ciclo de render. El `TextureManager` guarda un `HashMap<char, Texture>` que asocia cada carácter del laberinto con su imagen, más una textura de respaldo para cualquier carácter no contemplado.
-
-El muestreo usa **coordenadas normalizadas**: `u` y `v` van de 0 a 1 y solo al final se multiplican por el tamaño real de la imagen. Así el resto del programa nunca necesita saber que las texturas miden 128×128, y cambiar una por otra de distinta resolución no obliga a tocar nada más.
-
-## Dónde pegó el rayo
-
-Hasta ahora el rayo devolvía la distancia y el carácter de la celda. Para texturizar hace falta un dato más: **en qué punto a lo ancho de la pared** ocurrió el impacto, un valor de 0 a 1 que se llama `u`.
-
-El rayo avanza de un píxel a la vez y se detiene en cuanto entra a una celda que no es piso. En ese momento el punto de impacto ya está *dentro* de la celda, pero apenas cruzando una de sus caras. Restándole el origen de la celda se obtienen dos coordenadas locales:
-
-```
-hit_x = x − columna · BLOCK_SIZE
-hit_y = y − fila   · BLOCK_SIZE
+```rust
+if depth[x] <= projection.depth {
+    continue;   // la pared está más cerca: el enemigo queda tapado
+}
 ```
 
-Una de las dos queda pegada a una orilla de la celda (vale casi 0 o casi `BLOCK_SIZE`) y la otra puede valer cualquier cosa. **La que está pegada a la orilla dice qué cara se cruzó; la otra es la que recorre la pared** y por lo tanto es la que sirve de coordenada de textura. Comparar qué tan cerca está cada una de su orilla más próxima decide el caso:
+La comparación es **por columna**, no por sprite, y ahí está la gracia: un enemigo que asoma por la esquina de una pared se recorta verticalmente justo en la orilla, con unas columnas dibujadas y otras no. El reporte de consola (`P`) informa cuántas columnas de cada enemigo sobrevivieron la prueba, lo que permite ver la diferencia entre «tapado por pared», «fuera de pantalla» y «208 de 412 columnas visibles» sin depender del ojo.
 
-```
-orilla_x = min(hit_x, BLOCK_SIZE − hit_x)
-orilla_y = min(hit_y, BLOCK_SIZE − hit_y)
-```
+Es una versión reducida del *z-buffer* que usan las tarjetas de video, con una diferencia: aquí basta un valor por columna porque las paredes son verticales y ocupan la columna entera. En la fase de Render Pipeline hará falta uno por píxel.
 
-Si `orilla_x` es la menor, se cruzó una cara **vertical** (la izquierda o la derecha de la celda) y la textura se recorre con `hit_y`. Si no, se cruzó una cara **horizontal** y se recorre con `hit_x`.
+## Transparencia por color clave
 
-## El espejo
+El PNG del enemigo trae canal alfa, pero está **opaco de punta a punta**: los 16384 píxeles tienen alfa 255. El fondo no es «nada», es un magenta concreto, `0x980088`, que cubre 13232 de esos píxeles y que no aparece en ningún lado del dibujo.
 
-Saber cuál coordenada usar no basta: falta decidir **hacia dónde crece**. Si se toma `u = hit_y / BLOCK_SIZE` siempre, las dos caras verticales de una misma celda salen espejeadas entre sí, y una textura con cualquier detalle asimétrico lo delata de inmediato.
+La transparencia se decide entonces comparando el color:
 
-La regla es que `u` debe crecer hacia la **derecha del jugador**, porque las columnas de la pantalla también se recorren de izquierda a derecha. Visto el mapa desde arriba, con `x` hacia la derecha y `y` hacia abajo, alguien que mira al este tiene el sur a su derecha, y alguien que mira al sur tiene el oeste a su derecha. De ahí salen los dos casos:
-
-| Cara | Dirección de vista | Coordenada |
-| ---- | ------------------ | ---------- |
-| Vertical | `cos(ángulo) > 0` (al este) | `u = hit_y / BLOCK_SIZE` |
-| Vertical | `cos(ángulo) < 0` (al oeste) | `u = 1 − hit_y / BLOCK_SIZE` |
-| Horizontal | `sin(ángulo) > 0` (al sur) | `u = 1 − hit_x / BLOCK_SIZE` |
-| Horizontal | `sin(ángulo) < 0` (al norte) | `u = hit_x / BLOCK_SIZE` |
-
-El reporte de consola (`P`) imprime, para cinco columnas repartidas a lo ancho de la pantalla, contra qué cara chocó el rayo y qué valor de `u` resultó. Recorriendo una pared de lado a lado se puede comprobar que `u` sube de forma continua de 0 a 1 y que no salta ni se invierte al cambiar de celda.
-
-Como el rayo avanza de píxel en píxel, el punto de impacto tiene una precisión de aproximadamente un píxel. En una celda de 100 píxeles con una textura de 128 eso es poco más de un téxel de error, invisible en la práctica; solo cerca de las esquinas, donde las dos coordenadas quedan igual de pegadas a sus orillas, la elección de cara puede irse por la que no es.
-
-## La coordenada vertical
-
-La coordenada `v` recorre la estaca de arriba hacia abajo. El detalle está en **contra qué** se mide.
-
-La estaca se calcula centrada en la pantalla, y cuando la pared está muy cerca sus extremos se salen de ella. Si `v` se midiera contra el pedazo visible, una pared cercana mostraría la textura entera comprimida dentro de la pantalla en lugar de mostrar únicamente el pedazo que le toca, y la textura parecería encogerse al acercarse en vez de crecer. Por eso `v` se mide siempre contra los extremos **sin recortar**:
-
-```
-v = (y − extremo_superior_sin_recortar) / altura_de_la_estaca
+```rust
+if color == TRANSPARENT {
+    continue;
+}
 ```
 
-El recorte se aplica solo al rango de píxeles que efectivamente se dibujan. De este modo acercarse a una pared amplía la textura de forma continua, que es lo que se espera.
+Es la técnica del **color clave**, la que usaban los juegos de la época: se reserva un color que no exista en el arte y se acuerda que significa «no dibujar». Cuesta una comparación por píxel y no necesita que el formato de imagen soporte transparencia.
 
-## Cielo y piso
+## Buscar la textura una vez, no un millón
 
-Con las paredes texturizadas, el fondo uniforme de la etapa anterior dejaba la escena sin punto de apoyo. Antes de lanzar los rayos se pinta la mitad superior de la pantalla de color de cielo y la inferior de color de piso. Son dos colores planos, sin textura ni perspectiva: alcanzan para separar la escena y no cuestan nada.
+Un enemigo cercano llega a ocupar la pantalla entera. Eso son más de un millón de píxeles, y cada uno necesita un color de la textura.
+
+La versión directa pide ese color al `TextureManager` pasándole el carácter del enemigo, que internamente busca la textura en un `HashMap`. Funciona, pero esconde un costo: **una búsqueda con hash por píxel**. Con más de un millón de píxeles por cuadro entre paredes y sprites, esa búsqueda —unas decenas de nanosegundos— pasa a dominar el tiempo de render y lo vuelve además muy variable, porque depende de qué tan cerca esté el enemigo. El resultado se ve como parpadeo: el cuadro tarda siete milisegundos parado en un pasillo vacío y sesenta con un enemigo enfrente.
+
+La corrección es mover la búsqueda fuera del ciclo. El carácter no cambia mientras se dibuja una estaca ni mientras se dibuja un sprite, así que la textura se pide **una vez** y después se muestrea sobre esa referencia:
+
+```rust
+let texture = texture_manager.get(enemy.texture_key);
+
+for x in first_x..last_x {
+    for y in first_y..last_y {
+        let color = texture.sample(u, v);
+        ...
+    }
+}
+```
+
+Medido en el peor caso —un enemigo llenando la pantalla— el dibujo de los sprites baja de 52.6 ms a 2.8 ms, y el de las paredes de 8.2 ms a 2.8 ms. Es la misma cantidad de píxeles y la misma imagen: lo único que cambió fue *dónde* está la búsqueda.
+
+## El orden entre sprites
+
+El buffer de profundidad resuelve qué tapan las paredes, pero no resuelve qué pasa entre dos enemigos que se traslapan: el segundo en dibujarse taparía al primero sin importar cuál está más cerca.
+
+La solución es ordenarlos por distancia y dibujarlos **de atrás hacia adelante**, de modo que los cercanos se pinten encima de los lejanos. Es el algoritmo del pintor, y alcanza porque los sprites son pocos y siempre están de frente a la cámara.
+
+## Un sprite siempre ve de frente
+
+Vale la pena notar una limitación de este enfoque, porque se descubre de inmediato al jugar: **el enemigo se ve igual desde cualquier lado**. Se le puede dar la vuelta completa y nunca muestra la espalda.
+
+No es un error. Un sprite es una imagen plana que se dibuja siempre alineada a la pantalla —un *billboard*—, así que gira junto con el jugador y le presenta siempre la misma cara. El programa solo tiene una imagen del enemigo y no hay nada en el código que dependa de hacia dónde está viendo, porque el enemigo ni siquiera tiene una dirección de vista.
+
+Los juegos de la época lo resolvían guardando **ocho imágenes por enemigo**, una cada 45 grados, y eligiendo cuál dibujar según el ángulo entre la dirección del enemigo y la posición del jugador. La proyección, el escalado, la prueba de profundidad y la transparencia no cambian en nada: lo único que cambia es de cuál textura se muestrea. Para objetos simétricos —un barril, una lámpara, un objeto recogible— una sola imagen es de hecho la respuesta correcta.
 
 ## Estructura
 
@@ -108,19 +151,19 @@ Con las paredes texturizadas, el fondo uniforme de la etapa anterior dejaba la e
 .
 ├── Cargo.toml          # Manifiesto del proyecto (minifb, nalgebra-glm, image)
 ├── Cargo.lock          # Versiones exactas de las dependencias
-├── maze.txt            # Definición del laberinto en texto
-├── assets              # Texturas de las paredes en PNG
-│   └── wall1..5.png
+├── maze.txt            # Laberinto, posición inicial del jugador y enemigos
+├── assets              # Texturas de las paredes y del sprite
+│   ├── wall1..5.png
+│   └── sprite1.png
 └── src
-    ├── main.rs         # Punto de entrada; ciclo de render, entrada y las dos vistas
+    ├── main.rs         # Ciclo de render, buffer de profundidad y dibujo de sprites
     ├── framebuffer.rs  # Buffer de píxeles en memoria
-    ├── maze.rs         # Carga del laberinto y estado inicial del jugador
+    ├── maze.rs         # Carga del laberinto, del jugador y de los enemigos
     ├── player.rs       # Estado del jugador, lectura del teclado y colisiones
+    ├── enemy.rs        # Posición y textura de un sprite
     ├── caster.rs       # Lanzamiento de un rayo; distancia, impacto y coordenada de textura
-    └── textures.rs     # Carga de las imágenes y muestreo de color
+    └── textures.rs     # Carga de las imágenes, muestreo y color de transparencia
 ```
-
-La vista 2D sigue usando colores planos por carácter. Es un mapa, no una escena: los colores distinguen las celdas de un vistazo mejor que las texturas.
 
 ## Cómo correr
 
@@ -128,7 +171,7 @@ La vista 2D sigue usando colores planos por carácter. Es un mapa, no una escena
     ```bash
     git clone https://github.com/menene/cc2018-2026-02-10.git
     cd cc2018-2026-02-10
-    git checkout 11-RC-05-MAZE-TEXTURES
+    git checkout 12-RC-06-MAZE-SPRITES
     ```
 
 2. Compilar y ejecutar:
@@ -136,15 +179,16 @@ La vista 2D sigue usando colores planos por carácter. Es un mapa, no una escena
     cargo run
     ```
 
-3. Se abre una ventana con el laberinto texturizado. Caminar con `W`/`A`/`S`/`D` y observar cómo la textura se amplía al acercarse a una pared y cómo se desliza a lo largo de ella al caminar de lado. Con `T` se apagan las texturas para comparar contra la etapa anterior, y con `P` se puede seguir en consola la cara y la coordenada `u` de cada rayo. Cerrar con `Escape` o con el botón de cerrar de la ventana.
+3. Se abre una ventana con el laberinto y tres enemigos. Caminar con `W`/`A`/`S`/`D` y observar cómo crecen al acercarse y cómo se recortan al asomarse por la esquina de una pared. Con `M` se puede ver en el mapa dónde están realmente, y con `P` seguir en consola cuántas columnas de cada uno sobreviven la prueba de profundidad. Cerrar con `Escape` o con el botón de cerrar de la ventana.
 
-El programa busca las texturas en `assets/`, con rutas relativas al directorio desde el que se ejecuta; hay que correrlo desde la raíz del proyecto.
+El programa busca las imágenes en `assets/`, con rutas relativas al directorio desde el que se ejecuta; hay que correrlo desde la raíz del proyecto.
 
 ## Recursos
 
 - [Rust Programming Language](https://www.rust-lang.org/)
 - [minifb](https://docs.rs/minifb/)
 - [image](https://docs.rs/image/)
-- [Raycasting](https://en.wikipedia.org/wiki/Ray_casting)
-- [Lode's Computer Graphics Tutorial — Textured Raycasting](https://lodev.org/cgtutor/raycasting2.html)
-- [Texture mapping](https://en.wikipedia.org/wiki/Texture_mapping)
+- [Lode's Computer Graphics Tutorial — Raycasting with sprites](https://lodev.org/cgtutor/raycasting3.html)
+- [Z-buffering](https://en.wikipedia.org/wiki/Z-buffering)
+- [Chroma key](https://en.wikipedia.org/wiki/Chroma_key)
+- [Painter's algorithm](https://en.wikipedia.org/wiki/Painter%27s_algorithm)
