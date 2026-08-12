@@ -2,21 +2,25 @@ mod caster;
 mod framebuffer;
 mod maze;
 mod player;
+mod textures;
 
 use minifb::{Key, KeyRepeat, Window, WindowOptions};
 use std::f32::consts::PI;
 use std::time::Duration;
 
-use crate::caster::cast_ray;
+use crate::caster::{cast_ray, Face};
 use crate::framebuffer::Framebuffer;
 use crate::maze::{load_maze, Maze};
 use crate::player::{process_events, Player};
+use crate::textures::TextureManager;
 
 const BLOCK_SIZE: usize = 100;
 const NUM_RAYS_2D: usize = 5;
 const FOV: f32 = PI / 3.0;
 const REPORT_EVERY: u64 = 60;
 const REPORT_COLUMNS: [f32; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
+const SKY_COLOR: u32 = 0x87CEEB;
+const FLOOR_COLOR: u32 = 0x5A5A5A;
 
 fn cell_color(cell: char) -> u32 {
     match cell {
@@ -79,11 +83,25 @@ fn render_world(
     framebuffer: &mut Framebuffer,
     maze: &Maze,
     player: &Player,
+    texture_manager: &TextureManager,
     fisheye_correction: bool,
+    textured: bool,
 ) {
     let num_rays = framebuffer.width;
     let half_height = framebuffer.height as f32 / 2.0;
     let plane_distance = projection_plane_distance(framebuffer.width);
+
+    for y in 0..framebuffer.height {
+        framebuffer.set_current_color(if (y as f32) < half_height {
+            SKY_COLOR
+        } else {
+            FLOOR_COLOR
+        });
+
+        for x in 0..framebuffer.width {
+            framebuffer.point(x, y);
+        }
+    }
 
     for i in 0..num_rays {
         let angle = ray_angle(player, i, num_rays);
@@ -103,13 +121,29 @@ fn render_world(
 
         let stake_height = (BLOCK_SIZE as f32 / distance) * plane_distance;
 
-        let stake_top = (half_height - stake_height / 2.0).max(0.0) as usize;
-        let stake_bottom =
-            (half_height + stake_height / 2.0).min(framebuffer.height as f32) as usize;
+        // Los extremos sin recortar son los que definen la coordenada
+        // vertical de la textura: si se midiera contra el pedazo visible, una
+        // pared cercana mostraría la textura completa comprimida en la
+        // pantalla en lugar de mostrar solo el pedazo que le toca.
+        let stake_top = half_height - stake_height / 2.0;
 
-        framebuffer.set_current_color(cell_color(intersect.impact));
+        let first = stake_top.max(0.0) as usize;
+        let last = (half_height + stake_height / 2.0).min(framebuffer.height as f32) as usize;
 
-        for y in stake_top..stake_bottom {
+        if !textured {
+            framebuffer.set_current_color(cell_color(intersect.impact));
+
+            for y in first..last {
+                framebuffer.point(i, y);
+            }
+
+            continue;
+        }
+
+        for y in first..last {
+            let v = (y as f32 - stake_top) / stake_height;
+
+            framebuffer.set_current_color(texture_manager.sample(intersect.impact, intersect.u, v));
             framebuffer.point(i, y);
         }
     }
@@ -137,7 +171,7 @@ fn print_report(
         }
     );
     println!(
-        "  columna    desvío   distancia   corregida    altura    arriba     abajo   pared"
+        "  columna    desvío   distancia   corregida    altura    arriba     abajo   pared   cara         u"
     );
 
     for fraction in REPORT_COLUMNS {
@@ -158,7 +192,7 @@ fn print_report(
             (half_height + stake_height / 2.0).min(framebuffer.height as f32) as usize;
 
         println!(
-            "  {:>7}   {:>6.1}°   {:>9.1}   {:>9.1}   {:>7.1}   {:>7}   {:>7}   {}",
+            "  {:>7}   {:>6.1}°   {:>9.1}   {:>9.1}   {:>7.1}   {:>7}   {:>7}   {:>5}   {:<10}   {:>5.3}",
             i,
             (angle - player.a).to_degrees(),
             intersect.distance,
@@ -170,7 +204,12 @@ fn print_report(
                 '·'
             } else {
                 intersect.impact
-            }
+            },
+            match intersect.face {
+                Face::Vertical => "vertical",
+                Face::Horizontal => "horizontal",
+            },
+            intersect.u
         );
     }
 }
@@ -195,9 +234,13 @@ fn main() {
     )
     .unwrap();
 
+    // Las texturas se leen del disco una sola vez, antes del ciclo de render.
+    let texture_manager = TextureManager::new();
+
     let mut mode_3d = true;
     let mut fisheye_correction = true;
     let mut report_enabled = true;
+    let mut textured = true;
     let mut title_dirty = true;
     let mut frame: u64 = 0;
 
@@ -229,10 +272,16 @@ fn main() {
             title_dirty = true;
         }
 
+        if window.is_key_pressed(Key::T, KeyRepeat::No) {
+            textured = !textured;
+            title_dirty = true;
+        }
+
         if title_dirty {
             window.set_title(&format!(
-                "Maze Runner — vista: {} (M) — ojo de pez: {} (F) — consola: {} (P)",
+                "Maze Runner — vista: {} (M) — texturas: {} (T) — ojo de pez: {} (F) — consola: {} (P)",
                 if mode_3d { "3D" } else { "2D" },
+                if textured { "sí" } else { "no" },
                 if fisheye_correction {
                     "corregido"
                 } else {
@@ -257,7 +306,14 @@ fn main() {
         framebuffer.clear();
 
         if mode_3d {
-            render_world(&mut framebuffer, &maze, &player, fisheye_correction);
+            render_world(
+                &mut framebuffer,
+                &maze,
+                &player,
+                &texture_manager,
+                fisheye_correction,
+                textured,
+            );
         } else {
             render_2d(&mut framebuffer, &maze, &player);
         }

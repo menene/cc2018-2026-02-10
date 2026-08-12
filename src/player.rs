@@ -9,8 +9,8 @@ pub struct Player {
     pub a: f32,
 }
 
-const MOVE_SPEED: f32 = 50.0;
-const ROTATION_SPEED: f32 = PI / 250.0;
+const MOVE_SPEED: f32 = 10.0;
+const ROTATION_SPEED: f32 = PI / 150.0;
 const PLAYER_RADIUS: f32 = 15.0;
 
 fn is_walkable(maze: &Maze, x: f32, y: f32, block_size: usize) -> bool {
