@@ -1,3 +1,4 @@
+mod color;
 mod framebuffer;
 mod ray_intersect;
 mod sphere;
@@ -6,30 +7,36 @@ use minifb::{Key, Window, WindowOptions};
 use nalgebra_glm::{normalize, Vec3};
 use std::time::Duration;
 
+use crate::color::Color;
 use crate::framebuffer::Framebuffer;
-use crate::ray_intersect::RayIntersect;
+use crate::ray_intersect::{Material, RayIntersect};
 use crate::sphere::Sphere;
 
 const WIDTH: usize = 800;
 const HEIGHT: usize = 600;
 const BACKGROUND_COLOR: u32 = 0x040C24;
-const OBJECT_COLOR: u32 = 0xFFFFFF;
 
 /// Distancia de la cámara al plano de proyección. Con el plano a una unidad
 /// y el borde de la pantalla en x = ±1, el campo de visión es de 90 grados.
 const PROJECTION_PLANE: f32 = 1.0;
 
-/// Devuelve el color que le toca a un rayo: blanco si toca algún objeto,
-/// el fondo si no toca nada. Todavía no importa cuál objeto ni a qué
-/// distancia, así que el primer impacto termina la búsqueda.
-pub fn cast_ray(ray_origin: &Vec3, ray_direction: &Vec3, objects: &[Sphere]) -> u32 {
+/// Devuelve el color del objeto **más cercano** que toca el rayo. Ya no
+/// basta con el primero que se encuentre: el orden del arreglo no dice
+/// nada sobre qué está adelante.
+pub fn cast_ray(ray_origin: &Vec3, ray_direction: &Vec3, objects: &[Sphere]) -> Color {
+    let mut closest: Option<f32> = None;
+    let mut color = Color::from_hex(BACKGROUND_COLOR);
+
     for object in objects {
-        if object.ray_intersect(ray_origin, ray_direction) {
-            return OBJECT_COLOR;
+        if let Some(intersect) = object.ray_intersect(ray_origin, ray_direction) {
+            if closest.is_none_or(|distance| intersect.distance < distance) {
+                closest = Some(intersect.distance);
+                color = intersect.material.diffuse;
+            }
         }
     }
 
-    BACKGROUND_COLOR
+    color
 }
 
 pub fn render(framebuffer: &mut Framebuffer, objects: &[Sphere]) {
@@ -51,10 +58,9 @@ pub fn render(framebuffer: &mut Framebuffer, objects: &[Sphere]) {
             // alta, pero el rango -1..1 es el mismo en ambos ejes.
             let screen_x = screen_x * aspect_ratio;
 
-            let ray_direction =
-                normalize(&Vec3::new(screen_x, screen_y, -PROJECTION_PLANE));
+            let ray_direction = normalize(&Vec3::new(screen_x, screen_y, -PROJECTION_PLANE));
 
-            framebuffer.set_current_color(cast_ray(&camera, &ray_direction, objects));
+            framebuffer.set_current_color(cast_ray(&camera, &ray_direction, objects).to_hex());
             framebuffer.point(x, y);
         }
     }
@@ -65,16 +71,30 @@ fn main() {
 
     let mut framebuffer = Framebuffer::new(WIDTH, HEIGHT);
 
-    let mut window = Window::new("Rays", WIDTH, HEIGHT, WindowOptions::default()).unwrap();
+    let mut window = Window::new("Materials", WIDTH, HEIGHT, WindowOptions::default()).unwrap();
+
+    let ivory = Material::new(Color::new(100, 100, 80));
+    let rubber = Material::new(Color::new(80, 0, 0));
+    let cobalt = Material::new(Color::new(40, 80, 140));
 
     let objects = [
         Sphere {
             center: Vec3::new(0.0, 0.0, -4.0),
             radius: 1.0,
+            material: ivory,
         },
         Sphere {
             center: Vec3::new(1.5, 0.0, -5.0),
             radius: 0.5,
+            material: rubber,
+        },
+        // Se traslapa con la esfera de marfil y está más cerca, así que
+        // debe quedar encima de ella. Es la prueba de que gana el impacto
+        // más cercano y no el primero del arreglo.
+        Sphere {
+            center: Vec3::new(-1.0, 0.4, -3.0),
+            radius: 0.6,
+            material: cobalt,
         },
     ];
 

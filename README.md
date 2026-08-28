@@ -1,13 +1,14 @@
-# 13 — Raytracing: Rayos
+# 14 — Raytracing: Materiales
 
-Primera etapa de la fase de **Raytracing** del curso **cc2018 – Gráficas por Computadora** (UVG). Aquí cambia el tema. Las seis etapas anteriores construyeron un raycaster: un mundo hecho de celdas de una retícula, un rayo por columna de la pantalla y una pared vertical dibujada al final de cada rayo. De ahí se conserva una sola idea —**preguntarle a un rayo qué encuentra**— y todo lo demás se reemplaza.
+Segunda etapa de la fase de **Raytracing** del curso **cc2018 – Gráficas por Computadora** (UVG). La etapa anterior dejó dos siluetas blancas: el rayo solo sabía contestar «toco algo» o «no toco nada». Aquí esa respuesta se vuelve una descripción del impacto —dónde fue, a qué distancia, contra qué superficie— y con eso aparecen el color y el orden en profundidad.
 
 ## Objetivo
 
-- Generar un rayo por cada píxel de la pantalla, no uno por columna.
-- Definir la cámara, el plano de proyección y el mapeo de píxel a dirección.
-- Resolver analíticamente la intersección entre un rayo y una esfera.
-- Describir los objetos de la escena con un trait común.
+- Devolver la información completa del impacto en lugar de un `bool`.
+- Quedarse con el objeto **más cercano**, no con el primero del arreglo.
+- Descartar los objetos que están detrás de la cámara.
+- Calcular la normal de la superficie en el punto de impacto.
+- Describir el color de cada objeto con un material.
 
 ## Controles
 
@@ -15,89 +16,100 @@ Primera etapa de la fase de **Raytracing** del curso **cc2018 – Gráficas por 
 | ----- | ------ |
 | `Escape` | Salir |
 
-## Qué cambia respecto del raycaster
+## De un `bool` a un impacto
 
-| | Raycasting (etapas 07–12) | Raytracing (etapas 13 en adelante) |
+La etapa 13 se detenía en el discriminante: positivo significa que la recta cruza la esfera, y eso alcanzaba para pintar una silueta. Para pintar un color hay que **despejar `t`**, porque el color depende de contra qué objeto se chocó, y saber cuál exige saber cuál está más cerca.
+
+La cuadrática tiene dos soluciones. La del signo negativo es la menor:
+
+```
+t = (−b − √discriminante) / 2a
+```
+
+Geométricamente son los dos puntos donde el rayo atraviesa la esfera: por dónde **entra** y por dónde **sale**. El que interesa es el de entrada, porque es el que la cámara ve; el otro está del otro lado de la superficie, oculto por ella.
+
+Con `t` en mano se calcula todo lo demás:
+
+| Campo | Cómo sale | Para qué |
 | --- | --- | --- |
-| Rayos | Uno por columna: 800 | Uno por píxel: 800 × 600 = 480 000 |
-| Mundo | Celdas de una retícula, todas iguales | Objetos con geometría propia |
-| Intersección | Avanzar de a poco hasta caer en una celda ocupada | Resolver una ecuación |
-| Resultado del rayo | Una estaca vertical | Un píxel |
-| Cámara | Siempre a la altura de los ojos, gira en un solo eje | Un punto en el espacio, ve en cualquier dirección |
+| `distance` | es `t` | comparar objetos y quedarse con el más cercano |
+| `point` | `origen + t · dirección` | punto exacto del impacto |
+| `normal` | `normalize(point − centro)` | hacia dónde ve la superficie |
+| `material` | el del objeto tocado | de qué color pintar el píxel |
 
-La diferencia de fondo es la segunda fila. El raycaster podía dar pasos pequeños y preguntar «¿ya estoy dentro de una pared?» porque el mundo era una retícula y esa pregunta se contesta con un índice. Una esfera no tiene celdas: hay que resolver **dónde** la recta del rayo cruza la superficie, y eso es álgebra, no búsqueda.
+`point` y `normal` todavía no cambian ni un píxel de la imagen —de ahí el `#[allow(dead_code)]` sobre la estructura— pero se calculan ahora porque salen gratis de la misma cuenta y son la base de la iluminación: la normal dice qué tanto de frente le llega la luz a la superficie, y el punto es desde dónde se lanzará el rayo de sombra.
 
-## De un píxel a un rayo
+### `Option` en lugar de una bandera
 
-La cámara está en el origen y ve hacia **−Z**. A una unidad de distancia se coloca un **plano de proyección**, una ventana rectangular por la que se mira la escena. Cada píxel de la pantalla es un punto de ese plano, y el rayo de ese píxel es la recta que va de la cámara hacia él.
+Una versión común de este mismo paso guarda una bandera `is_intersecting` dentro de la estructura, junto con un constructor `empty()` que rellena el punto con ceros y el material con un negro de mentira. Funciona, pero obliga a llevar un impacto que no ocurrió y a recordar consultar la bandera antes de leer los demás campos.
 
-El píxel `(x, y)` se lleva primero al rango `-1..1`:
-
-```
-screen_x =  (2 · x) / ancho − 1
-screen_y = −(2 · y) / alto  + 1
-```
-
-La `y` va con signo contrario porque el píxel 0 está **arriba** en el framebuffer, mientras que el eje Y del mundo crece **hacia arriba**. Sin ese cambio de signo la imagen sale de cabeza.
-
-Ese rango es el mismo en ambos ejes, pero la ventana no es cuadrada: 800 × 600. Multiplicar `screen_x` por la **relación de aspecto** (ancho / alto) devuelve la proporción correcta; sin esa corrección las esferas salen ovaladas, estiradas a lo ancho.
-
-Con eso, la dirección del rayo es el vector que va del origen al punto del plano, normalizado:
-
-```
-dirección = normalize(screen_x, screen_y, −1)
-```
-
-El `−1` es la distancia al plano de proyección, y es también lo que fija el **campo de visión**: con el plano a una unidad y el borde de la pantalla en ±1, el ángulo de apertura es de 90 grados. Acercar el plano abre el campo de visión, alejarlo lo cierra — el mismo efecto que un lente gran angular o un teleobjetivo. Es el equivalente de la constante `FOV` del raycaster, expresado como una distancia en lugar de un ángulo.
-
-Normalizar no es opcional por costumbre: las cuentas de intersección de las etapas siguientes interpretan el parámetro `t` como una distancia, y eso solo es cierto si la dirección mide 1.
-
-## La intersección rayo–esfera
-
-Un punto del rayo se escribe `origen + t · dirección`, donde `t` es qué tan lejos se avanzó. Un punto de la esfera cumple `|punto − centro|² = radio²`. Sustituir lo primero en lo segundo deja una **ecuación cuadrática** en `t`:
-
-```
-a = dirección · dirección
-b = 2 · (origen − centro) · dirección
-c = (origen − centro) · (origen − centro) − radio²
-
-a·t² + b·t + c = 0
-```
-
-No hace falta resolverla todavía. El **discriminante** `b² − 4ac` ya contesta la pregunta de esta etapa:
-
-- negativo → la recta pasa de largo, no hay solución real;
-- cero → la roza, tangente;
-- positivo → la atraviesa, entra por un punto y sale por otro.
+Rust ya tiene un tipo para «esto puede no existir»:
 
 ```rust
-discriminant > 0.0
+fn ray_intersect(&self, ray_origin: &Vec3, ray_direction: &Vec3) -> Option<Intersect>;
 ```
 
-Esa línea es todo el objeto de esta etapa. Las etapas siguientes despejarán `t` para saber **dónde** fue el impacto, y de ahí saldrán la normal, el material, la luz y las sombras.
+Si no hubo impacto no hay estructura que llenar, y el compilador no deja leer un campo sin antes abrir el `Option`. La bandera y el impacto vacío desaparecen.
 
-Vale la pena notar dos cosas que este criterio todavía no distingue:
+## Lo que está atrás
 
-- **No sabe qué está adelante.** `cast_ray` devuelve blanco con el primer objeto que toca y deja de buscar. Con dos esferas superpuestas no hay forma de saber cuál tapa a cuál, porque ambas se pintan del mismo color. Ordenar por distancia es el trabajo de la etapa siguiente.
-- **No sabe qué está atrás.** Una esfera colocada detrás de la cámara también produce discriminante positivo: la **recta** la cruza, aunque el **rayo** vaya en sentido contrario. La corrección es exigir `t > 0`, y llega junto con el cálculo del punto de impacto.
-
-## Un trait para los objetos
-
-`RayIntersect` declara la única operación que la escena necesita de un objeto:
+El discriminante positivo dice que **la recta** cruza la esfera, no que el rayo lo haga. Una esfera colocada detrás de la cámara la cruza igual, con una `t` negativa: el punto de corte queda «hacia atrás» sobre la recta.
 
 ```rust
-pub trait RayIntersect {
-    fn ray_intersect(&self, ray_origin: &Vec3, ray_direction: &Vec3) -> bool;
+if t <= 0.0 {
+    return None;
 }
 ```
 
-`Sphere` lo implementa con la cuadrática de arriba. Un cubo, un plano o un triángulo lo implementarían con su propia ecuación, y `cast_ray` no cambiaría ni una línea: recorre objetos y pregunta. La esfera es el primer caso porque su ecuación es la más corta que existe, no porque el diseño dependa de ella.
+Esa comparación es la corrección que la etapa anterior dejó pendiente. Sin ella, mover una esfera de `z = -4` a `z = 4` no la quita de la pantalla — la deja exactamente donde estaba.
 
-## El costo
+## El impacto más cercano
 
-La imagen completa son 480 000 rayos, y cada rayo se prueba contra todos los objetos. Con dos esferas eso es cerca de un millón de intersecciones — barato, pero crece con el número de objetos y con la resolución.
+`cast_ray` ya no puede devolver el primer objeto que toca. El arreglo de objetos está en el orden en que se escribió en `main`, y ese orden no tiene nada que ver con cuál está adelante. Hay que probarlos todos y quedarse con el de menor distancia:
 
-Como la escena es estática y la cámara no se mueve, la imagen se calcula **una sola vez**, antes del ciclo de la ventana, y el ciclo se limita a volver a presentar el mismo buffer. Cuando la cámara empiece a moverse (etapa `15-RT-03-ORBIT-CAMERA`) habrá que volver a renderizar en cada cuadro, y ahí el costo por rayo empezará a importar.
+```rust
+for object in objects {
+    if let Some(intersect) = object.ray_intersect(ray_origin, ray_direction) {
+        if closest.is_none_or(|distance| intersect.distance < distance) {
+            closest = Some(intersect.distance);
+            color = intersect.material.diffuse;
+        }
+    }
+}
+```
+
+Es la misma idea del buffer de profundidad de los sprites (etapa `12-RC-06-MAZE-SPRITES`), con dos diferencias: aquí se resuelve por píxel y no por columna, y no hace falta guardar el buffer entero porque la decisión se toma dentro del mismo rayo.
+
+La escena tiene una esfera azul que se traslapa con la de marfil y está más cerca de la cámara. Está puesta precisamente para que se note: si se quitara la comparación de distancias, la azul quedaría **debajo** de la de marfil por estar después en el arreglo.
+
+## Un tipo para el color
+
+El framebuffer guarda enteros de 32 bits con los tres canales empacados. Ese formato es cómodo para escribir un píxel y molesto para todo lo demás: sumar dos colores empacados suma los canales entre sí y el acarreo de uno se mete en el siguiente.
+
+`Color` guarda los canales por separado y define las dos operaciones que la fase va a necesitar:
+
+- **Suma** — es sumar luz. Usa `saturating_add`, así que dos luces intensas dan blanco en lugar de dar la vuelta a 0.
+- **Multiplicación por un escalar** — es subir o bajar la intensidad. Recorta a `0..255` para que un factor mayor que 1 no desborde.
+
+Ninguna de las dos se usa todavía; con un solo color difuso y sin luces no hay nada que mezclar. Aparecen en `16-RT-04-LIGHT`, donde el color de un píxel pasa a ser una suma de aportes multiplicados por intensidades. El empacado a entero ocurre una sola vez, al escribir el píxel, con `to_hex`.
+
+## Materiales
+
+Un `Material` es lo que la superficie hace con la luz. Por ahora tiene un solo campo, `diffuse`, que es el color que se ve:
+
+```rust
+let ivory = Material::new(Color::new(100, 100, 80));
+let rubber = Material::new(Color::new(80, 0, 0));
+let cobalt = Material::new(Color::new(40, 80, 140));
+```
+
+Separar el material del objeto no es ceremonia: tres esferas pueden compartir el mismo material, y en las etapas siguientes ese material crece con el brillo especular, el coeficiente de reflexión y el índice de refracción, sin que la esfera cambie.
+
+## Lo que todavía falta
+
+La imagen tiene color, pero sigue siendo plana: cada esfera es un **disco** de color uniforme, sin volumen. El color de un píxel depende de qué material se tocó y de nada más — no de la normal, no de dónde está la luz, porque todavía no hay luz.
+
+Eso es lo que hace la etapa `16-RT-04-LIGHT`: multiplicar el color difuso por qué tanto de frente le llega la luz a la superficie, que es justamente lo que mide la normal ya calculada aquí. Antes, `15-RT-03-ORBIT-CAMERA` saca la cámara del origen para poder ver la escena desde cualquier lado.
 
 ## Estructura
 
@@ -106,13 +118,12 @@ Como la escena es estática y la cámara no se mueve, la imagen se calcula **una
 ├── Cargo.toml            # Manifiesto del proyecto (minifb, nalgebra-glm)
 ├── Cargo.lock            # Versiones exactas de las dependencias
 └── src
-    ├── main.rs           # Cámara, generación de rayos y ciclo de la ventana
+    ├── main.rs           # Cámara, generación de rayos e impacto más cercano
     ├── framebuffer.rs    # Buffer de píxeles en memoria
-    ├── ray_intersect.rs  # Trait común a todos los objetos de la escena
-    └── sphere.rs         # Esfera e intersección rayo–esfera
+    ├── color.rs          # Color por canales, suma y escalado
+    ├── ray_intersect.rs  # Material, Intersect y el trait común a los objetos
+    └── sphere.rs         # Esfera, solución de la cuadrática y normal
 ```
-
-El framebuffer es el mismo de las etapas anteriores, sin cambios: sigue siendo un `Vec<u32>` con un color actual y una operación `point`.
 
 ## Cómo correr
 
@@ -120,7 +131,7 @@ El framebuffer es el mismo de las etapas anteriores, sin cambios: sigue siendo u
     ```bash
     git clone https://github.com/menene/cc2018-2026-02-10.git
     cd cc2018-2026-02-10
-    git checkout 13-RT-01-RAYS
+    git checkout 14-RT-02-MATERIALS
     ```
 
 2. Compilar y ejecutar:
@@ -128,14 +139,14 @@ El framebuffer es el mismo de las etapas anteriores, sin cambios: sigue siendo u
     cargo run
     ```
 
-3. Se abre una ventana con dos siluetas blancas sobre el fondo: la esfera grande al centro y la pequeña a la derecha, más lejos. Vale la pena mover los centros y los radios en `main.rs` para ver cómo cambian el tamaño y la posición, y cambiar la distancia al plano de proyección para ver cómo se abre y se cierra el campo de visión. Cerrar con `Escape` o con el botón de cerrar de la ventana.
+3. Se abren tres esferas de colores distintos. Vale la pena intercambiar el orden de las esferas en el arreglo para comprobar que la imagen no cambia, mover la esfera azul a `z = 4` para verla desaparecer, y quedarse con el primer impacto en lugar del más cercano para verla hundirse detrás de la de marfil. Cerrar con `Escape` o con el botón de cerrar de la ventana.
 
 ## Recursos
 
 - [Rust Programming Language](https://www.rust-lang.org/)
+- [`Option` en el libro de Rust](https://doc.rust-lang.org/book/ch06-01-defining-an-enum.html)
 - [minifb](https://docs.rs/minifb/)
 - [nalgebra-glm](https://docs.rs/nalgebra-glm/)
-- [Ray tracing (graphics)](https://en.wikipedia.org/wiki/Ray_tracing_(graphics))
 - [Line–sphere intersection](https://en.wikipedia.org/wiki/Line%E2%80%93sphere_intersection)
 - [Scratchapixel — Ray-Sphere Intersection](https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-sphere-intersection.html)
-- [Ray Tracing in One Weekend](https://raytracing.github.io/books/RayTracingInOneWeekend.html)
+- [Understandable RayTracing in 256 lines](https://github.com/ssloy/tinyraytracer/wiki)
