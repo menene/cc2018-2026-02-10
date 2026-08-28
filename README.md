@@ -1,169 +1,118 @@
-# 12 — Raycasting: Sprites
+# 13 — Raytracing: Rayos
 
-Sexta etapa de la fase de **Raycasting** del curso **cc2018 – Gráficas por Computadora** (UVG). Hasta aquí el mundo estaba hecho solo de paredes, y una pared siempre está alineada a la retícula del laberinto: el rayo la encuentra y la dibuja en la columna que le toca. Un **sprite** no funciona así. No está alineado a nada, ningún rayo lo busca, y sin embargo tiene que aparecer del tamaño correcto, en la columna correcta y —lo más difícil— **detrás de las paredes que lo tapan**.
+Primera etapa de la fase de **Raytracing** del curso **cc2018 – Gráficas por Computadora** (UVG). Aquí cambia el tema. Las seis etapas anteriores construyeron un raycaster: un mundo hecho de celdas de una retícula, un rayo por columna de la pantalla y una pared vertical dibujada al final de cada rayo. De ahí se conserva una sola idea —**preguntarle a un rayo qué encuentra**— y todo lo demás se reemplaza.
 
 ## Objetivo
 
-- Colocar enemigos en el mundo desde el archivo del laberinto.
-- Proyectar una posición del mundo a una columna de la pantalla.
-- Escalar el sprite con la misma fórmula que las paredes.
-- Recortar el sprite contra las paredes usando un buffer de profundidad.
-- Dibujar con transparencia por color clave.
-- Ordenar los sprites entre sí de atrás hacia adelante.
+- Generar un rayo por cada píxel de la pantalla, no uno por columna.
+- Definir la cámara, el plano de proyección y el mapeo de píxel a dirección.
+- Resolver analíticamente la intersección entre un rayo y una esfera.
+- Describir los objetos de la escena con un trait común.
 
 ## Controles
 
 | Tecla | Acción |
 | ----- | ------ |
-| `W` | Avanzar en la dirección de vista |
-| `S` | Retroceder |
-| `A` | Girar a la izquierda |
-| `D` | Girar a la derecha |
-| `M` | Cambiar entre la vista 2D y la vista 3D |
-| `T` | Encender o apagar las texturas |
-| `F` | Encender o apagar la corrección de ojo de pez |
-| `P` | Encender o apagar el reporte en consola |
 | `Escape` | Salir |
 
-En la vista 2D los enemigos aparecen como puntos magenta sobre el mapa, lo que permite comparar dónde están con cómo se ven desde adentro.
+## Qué cambia respecto del raycaster
 
-## Enemigos en el laberinto
+| | Raycasting (etapas 07–12) | Raytracing (etapas 13 en adelante) |
+| --- | --- | --- |
+| Rayos | Uno por columna: 800 | Uno por píxel: 800 × 600 = 480 000 |
+| Mundo | Celdas de una retícula, todas iguales | Objetos con geometría propia |
+| Intersección | Avanzar de a poco hasta caer en una celda ocupada | Resolver una ecuación |
+| Resultado del rayo | Una estaca vertical | Un píxel |
+| Cámara | Siempre a la altura de los ojos, gira en un solo eje | Un punto en el espacio, ve en cualquier dirección |
 
-Los enemigos se colocan desde `maze.txt`, igual que el jugador. El carácter `e` marca una posición y deja la celda como **piso transitable**: un enemigo no es geometría, no detiene los rayos y no detiene al jugador.
+La diferencia de fondo es la segunda fila. El raycaster podía dar pasos pequeños y preguntar «¿ya estoy dentro de una pared?» porque el mundo era una retícula y esa pregunta se contesta con un índice. Una esfera no tiene celdas: hay que resolver **dónde** la recta del rayo cruza la superficie, y eso es álgebra, no búsqueda.
 
-```
-+--+--+--+--+
-|p          |
-+  +--+  +  +
-|  |  e  |  |
-+  +  +--+--+
-|  |     e  |
-+  +--+--+  +
-|  e     | g|
-+--+--+--+--+
-```
+## De un píxel a un rayo
 
-`load_maze` ya hacía exactamente esto con la `p` del jugador, así que agregar enemigos es extender ese mismo `match` con un caso más. Un enemigo queda descrito por su posición y por el carácter con el que el `TextureManager` encuentra su imagen — el mismo mapa de texturas de la etapa anterior, con una entrada nueva para `e`.
+La cámara está en el origen y ve hacia **−Z**. A una unidad de distancia se coloca un **plano de proyección**, una ventana rectangular por la que se mira la escena. Cada píxel de la pantalla es un punto de ese plano, y el rayo de ese píxel es la recta que va de la cámara hacia él.
 
-## De una posición a una columna
-
-Una pared se dibuja en la columna del rayo que la encontró. Con un sprite hay que hacer el camino inverso: partir de su posición y calcular en qué columna cae.
-
-El primer paso es el ángulo del enemigo visto desde el jugador, y qué tanto se desvía de la dirección de vista:
+El píxel `(x, y)` se lleva primero al rango `-1..1`:
 
 ```
-ángulo_del_enemigo = atan2(enemigo.y − jugador.y, enemigo.x − jugador.x)
-desvío = ángulo_del_enemigo − ángulo_del_jugador
+screen_x =  (2 · x) / ancho − 1
+screen_y = −(2 · y) / alto  + 1
 ```
 
-Esa resta necesita **normalizarse** a `-π..π`. Los dos ángulos crecen sin límite conforme el jugador gira, así que un enemigo que está justo enfrente puede dar una diferencia de casi una vuelta completa; sin normalizar, el sprite desaparecería según cuántas vueltas lleve dado el jugador.
+La `y` va con signo contrario porque el píxel 0 está **arriba** en el framebuffer, mientras que el eje Y del mundo crece **hacia arriba**. Sin ese cambio de signo la imagen sale de cabeza.
 
-Con el desvío ya normalizado, la columna sale de una interpolación lineal. Esto funciona porque los rayos se reparten **linealmente en el ángulo**: la columna `i` corresponde al ángulo `a − FOV/2 + FOV · i/(ancho−1)`, así que despejar `i` es despejar una recta:
+Ese rango es el mismo en ambos ejes, pero la ventana no es cuadrada: 800 × 600. Multiplicar `screen_x` por la **relación de aspecto** (ancho / alto) devuelve la proporción correcta; sin esa corrección las esferas salen ovaladas, estiradas a lo ancho.
 
-```
-columna = (desvío / FOV + 0.5) · (ancho − 1)
-```
-
-Antes de proyectar hay que descartar a los enemigos que están al costado o a la espalda. Pasado un cuarto de vuelta la relación entre ángulo y columna deja de tener sentido, y un enemigo detrás del jugador produciría una columna cualquiera dentro de la pantalla.
-
-El tamaño usa la **misma fórmula que las estacas** de las paredes, con la misma distancia al plano de proyección:
+Con eso, la dirección del rayo es el vector que va del origen al punto del plano, normalizado:
 
 ```
-tamaño = (BLOCK_SIZE / distancia) · distancia_al_plano_de_proyección
+dirección = normalize(screen_x, screen_y, −1)
 ```
 
-Usar la misma fórmula no es un detalle de estilo: es lo que hace que un enemigo y una pared que están a la misma distancia se vean del mismo alto. La distancia que entra ahí es la **perpendicular** a la dirección de vista, `distancia · cos(desvío)`, por la misma razón que en las paredes — si se usara la distancia en línea recta, el enemigo crecería al moverse hacia la orilla de la pantalla sin haberse acercado.
+El `−1` es la distancia al plano de proyección, y es también lo que fija el **campo de visión**: con el plano a una unidad y el borde de la pantalla en ±1, el ángulo de apertura es de 90 grados. Acercar el plano abre el campo de visión, alejarlo lo cierra — el mismo efecto que un lente gran angular o un teleobjetivo. Es el equivalente de la constante `FOV` del raycaster, expresado como una distancia en lugar de un ángulo.
 
-## El buffer de profundidad
+Normalizar no es opcional por costumbre: las cuentas de intersección de las etapas siguientes interpretan el parámetro `t` como una distancia, y eso solo es cierto si la dirección mide 1.
 
-Este es el problema central de la etapa. Los sprites se dibujan **después** de las paredes, así que por omisión quedan encima de ellas: un enemigo al otro lado de una pared se ve flotando sobre ella.
+## La intersección rayo–esfera
 
-La información que hace falta ya se calculó y se tiró a la basura. Al dibujar las paredes, cada columna de la pantalla supo exactamente a qué distancia estaba su pared. Basta con **guardarla**:
+Un punto del rayo se escribe `origen + t · dirección`, donde `t` es qué tan lejos se avanzó. Un punto de la esfera cumple `|punto − centro|² = radio²`. Sustituir lo primero en lo segundo deja una **ecuación cuadrática** en `t`:
+
+```
+a = dirección · dirección
+b = 2 · (origen − centro) · dirección
+c = (origen − centro) · (origen − centro) − radio²
+
+a·t² + b·t + c = 0
+```
+
+No hace falta resolverla todavía. El **discriminante** `b² − 4ac` ya contesta la pregunta de esta etapa:
+
+- negativo → la recta pasa de largo, no hay solución real;
+- cero → la roza, tangente;
+- positivo → la atraviesa, entra por un punto y sale por otro.
 
 ```rust
-let mut depth = vec![f32::INFINITY; framebuffer_width];
+discriminant > 0.0
 ```
 
-`render_world` anota en `depth[i]` la distancia de la pared de cada columna, e `INFINITY` donde no hubo pared. Después, al dibujar un sprite, cada una de sus columnas se compara contra ese valor:
+Esa línea es todo el objeto de esta etapa. Las etapas siguientes despejarán `t` para saber **dónde** fue el impacto, y de ahí saldrán la normal, el material, la luz y las sombras.
+
+Vale la pena notar dos cosas que este criterio todavía no distingue:
+
+- **No sabe qué está adelante.** `cast_ray` devuelve blanco con el primer objeto que toca y deja de buscar. Con dos esferas superpuestas no hay forma de saber cuál tapa a cuál, porque ambas se pintan del mismo color. Ordenar por distancia es el trabajo de la etapa siguiente.
+- **No sabe qué está atrás.** Una esfera colocada detrás de la cámara también produce discriminante positivo: la **recta** la cruza, aunque el **rayo** vaya en sentido contrario. La corrección es exigir `t > 0`, y llega junto con el cálculo del punto de impacto.
+
+## Un trait para los objetos
+
+`RayIntersect` declara la única operación que la escena necesita de un objeto:
 
 ```rust
-if depth[x] <= projection.depth {
-    continue;   // la pared está más cerca: el enemigo queda tapado
+pub trait RayIntersect {
+    fn ray_intersect(&self, ray_origin: &Vec3, ray_direction: &Vec3) -> bool;
 }
 ```
 
-La comparación es **por columna**, no por sprite, y ahí está la gracia: un enemigo que asoma por la esquina de una pared se recorta verticalmente justo en la orilla, con unas columnas dibujadas y otras no. El reporte de consola (`P`) informa cuántas columnas de cada enemigo sobrevivieron la prueba, lo que permite ver la diferencia entre «tapado por pared», «fuera de pantalla» y «208 de 412 columnas visibles» sin depender del ojo.
+`Sphere` lo implementa con la cuadrática de arriba. Un cubo, un plano o un triángulo lo implementarían con su propia ecuación, y `cast_ray` no cambiaría ni una línea: recorre objetos y pregunta. La esfera es el primer caso porque su ecuación es la más corta que existe, no porque el diseño dependa de ella.
 
-Es una versión reducida del *z-buffer* que usan las tarjetas de video, con una diferencia: aquí basta un valor por columna porque las paredes son verticales y ocupan la columna entera. En la fase de Render Pipeline hará falta uno por píxel.
+## El costo
 
-## Transparencia por color clave
+La imagen completa son 480 000 rayos, y cada rayo se prueba contra todos los objetos. Con dos esferas eso es cerca de un millón de intersecciones — barato, pero crece con el número de objetos y con la resolución.
 
-El PNG del enemigo trae canal alfa, pero está **opaco de punta a punta**: los 16384 píxeles tienen alfa 255. El fondo no es «nada», es un magenta concreto, `0x980088`, que cubre 13232 de esos píxeles y que no aparece en ningún lado del dibujo.
-
-La transparencia se decide entonces comparando el color:
-
-```rust
-if color == TRANSPARENT {
-    continue;
-}
-```
-
-Es la técnica del **color clave**, la que usaban los juegos de la época: se reserva un color que no exista en el arte y se acuerda que significa «no dibujar». Cuesta una comparación por píxel y no necesita que el formato de imagen soporte transparencia.
-
-## Buscar la textura una vez, no un millón
-
-Un enemigo cercano llega a ocupar la pantalla entera. Eso son más de un millón de píxeles, y cada uno necesita un color de la textura.
-
-La versión directa pide ese color al `TextureManager` pasándole el carácter del enemigo, que internamente busca la textura en un `HashMap`. Funciona, pero esconde un costo: **una búsqueda con hash por píxel**. Con más de un millón de píxeles por cuadro entre paredes y sprites, esa búsqueda —unas decenas de nanosegundos— pasa a dominar el tiempo de render y lo vuelve además muy variable, porque depende de qué tan cerca esté el enemigo. El resultado se ve como parpadeo: el cuadro tarda siete milisegundos parado en un pasillo vacío y sesenta con un enemigo enfrente.
-
-La corrección es mover la búsqueda fuera del ciclo. El carácter no cambia mientras se dibuja una estaca ni mientras se dibuja un sprite, así que la textura se pide **una vez** y después se muestrea sobre esa referencia:
-
-```rust
-let texture = texture_manager.get(enemy.texture_key);
-
-for x in first_x..last_x {
-    for y in first_y..last_y {
-        let color = texture.sample(u, v);
-        ...
-    }
-}
-```
-
-Medido en el peor caso —un enemigo llenando la pantalla— el dibujo de los sprites baja de 52.6 ms a 2.8 ms, y el de las paredes de 8.2 ms a 2.8 ms. Es la misma cantidad de píxeles y la misma imagen: lo único que cambió fue *dónde* está la búsqueda.
-
-## El orden entre sprites
-
-El buffer de profundidad resuelve qué tapan las paredes, pero no resuelve qué pasa entre dos enemigos que se traslapan: el segundo en dibujarse taparía al primero sin importar cuál está más cerca.
-
-La solución es ordenarlos por distancia y dibujarlos **de atrás hacia adelante**, de modo que los cercanos se pinten encima de los lejanos. Es el algoritmo del pintor, y alcanza porque los sprites son pocos y siempre están de frente a la cámara.
-
-## Un sprite siempre ve de frente
-
-Vale la pena notar una limitación de este enfoque, porque se descubre de inmediato al jugar: **el enemigo se ve igual desde cualquier lado**. Se le puede dar la vuelta completa y nunca muestra la espalda.
-
-No es un error. Un sprite es una imagen plana que se dibuja siempre alineada a la pantalla —un *billboard*—, así que gira junto con el jugador y le presenta siempre la misma cara. El programa solo tiene una imagen del enemigo y no hay nada en el código que dependa de hacia dónde está viendo, porque el enemigo ni siquiera tiene una dirección de vista.
-
-Los juegos de la época lo resolvían guardando **ocho imágenes por enemigo**, una cada 45 grados, y eligiendo cuál dibujar según el ángulo entre la dirección del enemigo y la posición del jugador. La proyección, el escalado, la prueba de profundidad y la transparencia no cambian en nada: lo único que cambia es de cuál textura se muestrea. Para objetos simétricos —un barril, una lámpara, un objeto recogible— una sola imagen es de hecho la respuesta correcta.
+Como la escena es estática y la cámara no se mueve, la imagen se calcula **una sola vez**, antes del ciclo de la ventana, y el ciclo se limita a volver a presentar el mismo buffer. Cuando la cámara empiece a moverse (etapa `15-RT-03-ORBIT-CAMERA`) habrá que volver a renderizar en cada cuadro, y ahí el costo por rayo empezará a importar.
 
 ## Estructura
 
 ```
 .
-├── Cargo.toml          # Manifiesto del proyecto (minifb, nalgebra-glm, image)
-├── Cargo.lock          # Versiones exactas de las dependencias
-├── maze.txt            # Laberinto, posición inicial del jugador y enemigos
-├── assets              # Texturas de las paredes y del sprite
-│   ├── wall1..5.png
-│   └── sprite1.png
+├── Cargo.toml            # Manifiesto del proyecto (minifb, nalgebra-glm)
+├── Cargo.lock            # Versiones exactas de las dependencias
 └── src
-    ├── main.rs         # Ciclo de render, buffer de profundidad y dibujo de sprites
-    ├── framebuffer.rs  # Buffer de píxeles en memoria
-    ├── maze.rs         # Carga del laberinto, del jugador y de los enemigos
-    ├── player.rs       # Estado del jugador, lectura del teclado y colisiones
-    ├── enemy.rs        # Posición y textura de un sprite
-    ├── caster.rs       # Lanzamiento de un rayo; distancia, impacto y coordenada de textura
-    └── textures.rs     # Carga de las imágenes, muestreo y color de transparencia
+    ├── main.rs           # Cámara, generación de rayos y ciclo de la ventana
+    ├── framebuffer.rs    # Buffer de píxeles en memoria
+    ├── ray_intersect.rs  # Trait común a todos los objetos de la escena
+    └── sphere.rs         # Esfera e intersección rayo–esfera
 ```
+
+El framebuffer es el mismo de las etapas anteriores, sin cambios: sigue siendo un `Vec<u32>` con un color actual y una operación `point`.
 
 ## Cómo correr
 
@@ -171,7 +120,7 @@ Los juegos de la época lo resolvían guardando **ocho imágenes por enemigo**, 
     ```bash
     git clone https://github.com/menene/cc2018-2026-02-10.git
     cd cc2018-2026-02-10
-    git checkout 12-RC-06-MAZE-SPRITES
+    git checkout 13-RT-01-RAYS
     ```
 
 2. Compilar y ejecutar:
@@ -179,16 +128,14 @@ Los juegos de la época lo resolvían guardando **ocho imágenes por enemigo**, 
     cargo run
     ```
 
-3. Se abre una ventana con el laberinto y tres enemigos. Caminar con `W`/`A`/`S`/`D` y observar cómo crecen al acercarse y cómo se recortan al asomarse por la esquina de una pared. Con `M` se puede ver en el mapa dónde están realmente, y con `P` seguir en consola cuántas columnas de cada uno sobreviven la prueba de profundidad. Cerrar con `Escape` o con el botón de cerrar de la ventana.
-
-El programa busca las imágenes en `assets/`, con rutas relativas al directorio desde el que se ejecuta; hay que correrlo desde la raíz del proyecto.
+3. Se abre una ventana con dos siluetas blancas sobre el fondo: la esfera grande al centro y la pequeña a la derecha, más lejos. Vale la pena mover los centros y los radios en `main.rs` para ver cómo cambian el tamaño y la posición, y cambiar la distancia al plano de proyección para ver cómo se abre y se cierra el campo de visión. Cerrar con `Escape` o con el botón de cerrar de la ventana.
 
 ## Recursos
 
 - [Rust Programming Language](https://www.rust-lang.org/)
 - [minifb](https://docs.rs/minifb/)
-- [image](https://docs.rs/image/)
-- [Lode's Computer Graphics Tutorial — Raycasting with sprites](https://lodev.org/cgtutor/raycasting3.html)
-- [Z-buffering](https://en.wikipedia.org/wiki/Z-buffering)
-- [Chroma key](https://en.wikipedia.org/wiki/Chroma_key)
-- [Painter's algorithm](https://en.wikipedia.org/wiki/Painter%27s_algorithm)
+- [nalgebra-glm](https://docs.rs/nalgebra-glm/)
+- [Ray tracing (graphics)](https://en.wikipedia.org/wiki/Ray_tracing_(graphics))
+- [Line–sphere intersection](https://en.wikipedia.org/wiki/Line%E2%80%93sphere_intersection)
+- [Scratchapixel — Ray-Sphere Intersection](https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-sphere-intersection.html)
+- [Ray Tracing in One Weekend](https://raytracing.github.io/books/RayTracingInOneWeekend.html)
