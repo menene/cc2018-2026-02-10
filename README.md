@@ -1,115 +1,105 @@
-# 14 — Raytracing: Materiales
+# 15 — Raytracing: Cámara orbital
 
-Segunda etapa de la fase de **Raytracing** del curso **cc2018 – Gráficas por Computadora** (UVG). La etapa anterior dejó dos siluetas blancas: el rayo solo sabía contestar «toco algo» o «no toco nada». Aquí esa respuesta se vuelve una descripción del impacto —dónde fue, a qué distancia, contra qué superficie— y con eso aparecen el color y el orden en profundidad.
+Tercera etapa de la fase de **Raytracing** del curso **cc2018 – Gráficas por Computadora** (UVG). Hasta aquí la cámara estuvo clavada en el origen viendo hacia −Z, y la única forma de ver la escena desde otro lado era mover las esferas. Esta etapa separa las dos cosas: los objetos se quedan donde están y lo que se mueve es el punto desde el cual se mira.
 
 ## Objetivo
 
-- Devolver la información completa del impacto en lugar de un `bool`.
-- Quedarse con el objeto **más cercano**, no con el primero del arreglo.
-- Descartar los objetos que están detrás de la cámara.
-- Calcular la normal de la superficie en el punto de impacto.
-- Describir el color de cada objeto con un material.
+- Describir la cámara con `eye`, `center` y `up`.
+- Construir una base ortonormal a partir de esos tres vectores.
+- Convertir la dirección del rayo de coordenadas de cámara a coordenadas del mundo.
+- Orbitar el ojo alrededor del centro con el teclado.
+- Hacer explícito el campo de visión.
 
 ## Controles
 
 | Tecla | Acción |
 | ----- | ------ |
+| `←` | Orbitar hacia la izquierda |
+| `→` | Orbitar hacia la derecha |
+| `↑` | Subir sobre la escena |
+| `↓` | Bajar bajo la escena |
 | `Escape` | Salir |
 
-## De un `bool` a un impacto
+## Dos sistemas de coordenadas
 
-La etapa 13 se detenía en el discriminante: positivo significa que la recta cruza la esfera, y eso alcanzaba para pintar una silueta. Para pintar un color hay que **despejar `t`**, porque el color depende de contra qué objeto se chocó, y saber cuál exige saber cuál está más cerca.
+El generador de rayos de las etapas anteriores solo sabe hacer una cosa: repartir direcciones sobre un rectángulo en el plano XY, apuntando hacia −Z. Esa es una descripción cómoda y no conviene perderla — el mapeo de píxel a dirección no debería depender de hacia dónde está viendo la cámara.
 
-La cuadrática tiene dos soluciones. La del signo negativo es la menor:
+La salida son entonces dos sistemas distintos:
 
-```
-t = (−b − √discriminante) / 2a
-```
+- **Coordenadas de cámara**: el ojo en el origen, la vista hacia −Z, la pantalla en XY. Aquí nacen todos los rayos, siempre igual.
+- **Coordenadas del mundo**: donde están las esferas, y donde la cámara es un punto cualquiera viendo en una dirección cualquiera.
 
-Geométricamente son los dos puntos donde el rayo atraviesa la esfera: por dónde **entra** y por dónde **sale**. El que interesa es el de entrada, porque es el que la cámara ve; el otro está del otro lado de la superficie, oculto por ella.
+El puente entre ambos es un **cambio de base**. El rayo se genera en el primero y se reexpresa en el segundo justo antes de lanzarlo.
 
-Con `t` en mano se calcula todo lo demás:
+## La base de la cámara
 
-| Campo | Cómo sale | Para qué |
-| --- | --- | --- |
-| `distance` | es `t` | comparar objetos y quedarse con el más cercano |
-| `point` | `origen + t · dirección` | punto exacto del impacto |
-| `normal` | `normalize(point − centro)` | hacia dónde ve la superficie |
-| `material` | el del objeto tocado | de qué color pintar el píxel |
+Los tres vectores que describen la cámara son la convención de `lookAt`, la misma de OpenGL:
 
-`point` y `normal` todavía no cambian ni un píxel de la imagen —de ahí el `#[allow(dead_code)]` sobre la estructura— pero se calculan ahora porque salen gratis de la misma cuenta y son la base de la iluminación: la normal dice qué tanto de frente le llega la luz a la superficie, y el punto es desde dónde se lanzará el rayo de sombra.
+| Vector | Qué es |
+| --- | --- |
+| `eye` | dónde está la cámara |
+| `center` | qué punto está viendo |
+| `up` | hacia dónde queda «arriba» |
 
-### `Option` en lugar de una bandera
-
-Una versión común de este mismo paso guarda una bandera `is_intersecting` dentro de la estructura, junto con un constructor `empty()` que rellena el punto con ceros y el material con un negro de mentira. Funciona, pero obliga a llevar un impacto que no ocurrió y a recordar consultar la bandera antes de leer los demás campos.
-
-Rust ya tiene un tipo para «esto puede no existir»:
+De ahí salen los tres ejes:
 
 ```rust
-fn ray_intersect(&self, ray_origin: &Vec3, ray_direction: &Vec3) -> Option<Intersect>;
+let forward = (self.center - self.eye).normalize();
+let right = forward.cross(&self.up).normalize();
+let up = right.cross(&forward).normalize();
 ```
 
-Si no hubo impacto no hay estructura que llenar, y el compilador no deja leer un campo sin antes abrir el `Option`. La bandera y el impacto vacío desaparecen.
+Hay un detalle en la tercera línea que es fácil pasar por alto: el `up` que se calcula **no es** el `up` que se recibió. El que se recibe es una intención —«arriba es hacia allá»— y no tiene por qué ser perpendicular a la dirección de vista; en cuanto la cámara se eleva sobre la escena, deja de serlo. Recalcularlo como el producto cruz de los otros dos garantiza que los tres ejes queden mutuamente perpendiculares, que es lo que hace que la imagen no salga sesgada.
 
-## Lo que está atrás
+Eso también explica el límite del pitch. Si la cámara llegara justo encima de la escena, `forward` sería paralelo a `up`, su producto cruz sería el vector cero, y normalizar el cero da `NaN`: la imagen se rompe. Detenerse una décima de radián antes del polo evita el caso degenerado.
 
-El discriminante positivo dice que **la recta** cruza la esfera, no que el rayo lo haga. Una esfera colocada detrás de la cámara la cruza igual, con una `t` negativa: el punto de corte queda «hacia atrás» sobre la recta.
+Con la base lista, el cambio de base es una combinación lineal:
 
 ```rust
-if t <= 0.0 {
-    return None;
+let rotated = vector.x * right + vector.y * up - vector.z * forward;
+```
+
+El signo negativo del último término es la misma convención de siempre: en coordenadas de cámara se ve hacia −Z, así que una `z` negativa tiene que salir hacia **adelante** en el mundo.
+
+Nótese que el cambio de base solo rota — no traslada. La posición entra por otro lado: el rayo ya no sale del origen sino de `camera.eye`.
+
+## Orbitar
+
+`orbit` mueve el ojo sobre una esfera imaginaria centrada en `center`, sin cambiar el radio. Es más fácil en **coordenadas esféricas**: el vector que va del centro al ojo se descompone en radio, yaw (el ángulo alrededor del eje Y) y pitch (la altura sobre el plano XZ), se le suman los incrementos, y se rearma el vector.
+
+```
+yaw   = atan2(z, x)
+pitch = atan2(−y, √(x² + z²))
+```
+
+El radio se calcula pero no se toca, y por eso la cámara nunca se acerca ni se aleja: gira alrededor de la escena a distancia fija. El yaw da la vuelta completa con el módulo `2π`; el pitch se recorta contra los polos.
+
+Girar alrededor de la escena es también la manera más directa de comprobar la prueba de profundidad de la etapa anterior: la esfera azul se ve entera desde el frente, y a un cuarto de vuelta la de marfil le tapa poco más de la mitad.
+
+## El campo de visión, ahora explícito
+
+Las etapas 13 y 14 ponían el plano de proyección a una unidad de distancia con la pantalla de −1 a 1, lo que fijaba el campo de visión en 90 grados sin decirlo. Ahora el FOV es un parámetro y el plano se escala a partir de él:
+
+```rust
+let perspective_scale = (FOV / 2.0).tan();
+```
+
+Es la relación inversa de antes: con el plano a distancia 1, la media altura de la ventana es `tan(FOV/2)`. Con `FOV = π/3` (60 grados) esa media altura es 0.577, más angosta que la de 90 grados — la escena se ve más de cerca, como con un lente más largo.
+
+La corrección de aspecto sigue aplicándose solo a la horizontal, así que el FOV declarado es el **vertical** y el horizontal sale más ancho en la misma proporción que la ventana.
+
+## Renderizar solo cuando hace falta
+
+Con la cámara móvil vuelve el problema que la etapa 13 había esquivado: la imagen ya no se puede calcular una sola vez. Pero tampoco hace falta recalcularla 60 veces por segundo cuando nadie está tocando el teclado — la escena es estática y la cámara quieta da exactamente el mismo resultado.
+
+```rust
+if camera_moved {
+    render(&mut framebuffer, &objects, &camera);
+    camera_moved = false;
 }
 ```
 
-Esa comparación es la corrección que la etapa anterior dejó pendiente. Sin ella, mover una esfera de `z = -4` a `z = 4` no la quita de la pantalla — la deja exactamente donde estaba.
-
-## El impacto más cercano
-
-`cast_ray` ya no puede devolver el primer objeto que toca. El arreglo de objetos está en el orden en que se escribió en `main`, y ese orden no tiene nada que ver con cuál está adelante. Hay que probarlos todos y quedarse con el de menor distancia:
-
-```rust
-for object in objects {
-    if let Some(intersect) = object.ray_intersect(ray_origin, ray_direction) {
-        if closest.is_none_or(|distance| intersect.distance < distance) {
-            closest = Some(intersect.distance);
-            color = intersect.material.diffuse;
-        }
-    }
-}
-```
-
-Es la misma idea del buffer de profundidad de los sprites (etapa `12-RC-06-MAZE-SPRITES`), con dos diferencias: aquí se resuelve por píxel y no por columna, y no hace falta guardar el buffer entero porque la decisión se toma dentro del mismo rayo.
-
-La escena tiene una esfera azul que se traslapa con la de marfil y está más cerca de la cámara. Está puesta precisamente para que se note: si se quitara la comparación de distancias, la azul quedaría **debajo** de la de marfil por estar después en el arreglo.
-
-## Un tipo para el color
-
-El framebuffer guarda enteros de 32 bits con los tres canales empacados. Ese formato es cómodo para escribir un píxel y molesto para todo lo demás: sumar dos colores empacados suma los canales entre sí y el acarreo de uno se mete en el siguiente.
-
-`Color` guarda los canales por separado y define las dos operaciones que la fase va a necesitar:
-
-- **Suma** — es sumar luz. Usa `saturating_add`, así que dos luces intensas dan blanco en lugar de dar la vuelta a 0.
-- **Multiplicación por un escalar** — es subir o bajar la intensidad. Recorta a `0..255` para que un factor mayor que 1 no desborde.
-
-Ninguna de las dos se usa todavía; con un solo color difuso y sin luces no hay nada que mezclar. Aparecen en `16-RT-04-LIGHT`, donde el color de un píxel pasa a ser una suma de aportes multiplicados por intensidades. El empacado a entero ocurre una sola vez, al escribir el píxel, con `to_hex`.
-
-## Materiales
-
-Un `Material` es lo que la superficie hace con la luz. Por ahora tiene un solo campo, `diffuse`, que es el color que se ve:
-
-```rust
-let ivory = Material::new(Color::new(100, 100, 80));
-let rubber = Material::new(Color::new(80, 0, 0));
-let cobalt = Material::new(Color::new(40, 80, 140));
-```
-
-Separar el material del objeto no es ceremonia: tres esferas pueden compartir el mismo material, y en las etapas siguientes ese material crece con el brillo especular, el coeficiente de reflexión y el índice de refracción, sin que la esfera cambie.
-
-## Lo que todavía falta
-
-La imagen tiene color, pero sigue siendo plana: cada esfera es un **disco** de color uniforme, sin volumen. El color de un píxel depende de qué material se tocó y de nada más — no de la normal, no de dónde está la luz, porque todavía no hay luz.
-
-Eso es lo que hace la etapa `16-RT-04-LIGHT`: multiplicar el color difuso por qué tanto de frente le llega la luz a la superficie, que es justamente lo que mide la normal ya calculada aquí. Antes, `15-RT-03-ORBIT-CAMERA` saca la cámara del origen para poder ver la escena desde cualquier lado.
+La bandera se enciende con cada tecla de órbita y con el primer cuadro. El ciclo de la ventana sigue corriendo a su ritmo y presentando el buffer; lo que se ahorra son los 480 000 rayos de los cuadros en los que nada cambió.
 
 ## Estructura
 
@@ -118,7 +108,8 @@ Eso es lo que hace la etapa `16-RT-04-LIGHT`: multiplicar el color difuso por qu
 ├── Cargo.toml            # Manifiesto del proyecto (minifb, nalgebra-glm)
 ├── Cargo.lock            # Versiones exactas de las dependencias
 └── src
-    ├── main.rs           # Cámara, generación de rayos e impacto más cercano
+    ├── main.rs           # Generación de rayos, campo de visión y ciclo de eventos
+    ├── camera.rs         # Base de la cámara, cambio de base y órbita
     ├── framebuffer.rs    # Buffer de píxeles en memoria
     ├── color.rs          # Color por canales, suma y escalado
     ├── ray_intersect.rs  # Material, Intersect y el trait común a los objetos
@@ -131,7 +122,7 @@ Eso es lo que hace la etapa `16-RT-04-LIGHT`: multiplicar el color difuso por qu
     ```bash
     git clone https://github.com/menene/cc2018-2026-02-10.git
     cd cc2018-2026-02-10
-    git checkout 14-RT-02-MATERIALS
+    git checkout 15-RT-03-ORBIT-CAMERA
     ```
 
 2. Compilar y ejecutar:
@@ -139,14 +130,14 @@ Eso es lo que hace la etapa `16-RT-04-LIGHT`: multiplicar el color difuso por qu
     cargo run
     ```
 
-3. Se abren tres esferas de colores distintos. Vale la pena intercambiar el orden de las esferas en el arreglo para comprobar que la imagen no cambia, mover la esfera azul a `z = 4` para verla desaparecer, y quedarse con el primer impacto en lugar del más cercano para verla hundirse detrás de la de marfil. Cerrar con `Escape` o con el botón de cerrar de la ventana.
+3. Se abren tres esferas alrededor del origen. Con las flechas se gira alrededor de ellas: a un cuarto de vuelta la de marfil tapa poco más de la mitad de la azul, y con `↑` se llega a verlas desde arriba. Vale la pena cambiar `FOV` para ver cómo se abre y se cierra el encuadre, y sustituir el `up` recalculado por el `up` recibido para ver la imagen sesgarse en cuanto la cámara se eleva. Cerrar con `Escape` o con el botón de cerrar de la ventana.
 
 ## Recursos
 
 - [Rust Programming Language](https://www.rust-lang.org/)
-- [`Option` en el libro de Rust](https://doc.rust-lang.org/book/ch06-01-defining-an-enum.html)
 - [minifb](https://docs.rs/minifb/)
 - [nalgebra-glm](https://docs.rs/nalgebra-glm/)
-- [Line–sphere intersection](https://en.wikipedia.org/wiki/Line%E2%80%93sphere_intersection)
-- [Scratchapixel — Ray-Sphere Intersection](https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-sphere-intersection.html)
-- [Understandable RayTracing in 256 lines](https://github.com/ssloy/tinyraytracer/wiki)
+- [Change of basis](https://en.wikipedia.org/wiki/Change_of_basis)
+- [Spherical coordinate system](https://en.wikipedia.org/wiki/Spherical_coordinate_system)
+- [`gluLookAt` — la convención eye / center / up](https://registry.khronos.org/OpenGL-Refpages/gl2.1/xhtml/gluLookAt.xml)
+- [Scratchapixel — Placing a Camera: the LookAt Function](https://www.scratchapixel.com/lessons/mathematics-physics-for-computer-graphics/lookat-function/framing-lookat-function.html)

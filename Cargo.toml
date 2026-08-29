@@ -1,5 +1,5 @@
 [package]
-name = "rt_02_materials"
+name = "rt_03_orbit_camera"
 version = "0.1.0"
 edition = "2021"
 
