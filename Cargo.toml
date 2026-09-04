@@ -1,5 +1,5 @@
 [package]
-name = "rt_04_light"
+name = "rt_05_shadow"
 version = "0.1.0"
 edition = "2021"
 

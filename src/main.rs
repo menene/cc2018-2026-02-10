@@ -27,17 +27,46 @@ const FOV: f32 = PI / 3.0;
 
 const ROTATION_SPEED: f32 = PI / 60.0;
 
+const SHADOW_BIAS: f32 = 1e-3;
+
 pub fn reflect(incident: &Vec3, normal: &Vec3) -> Vec3 {
     incident - normal * (2.0 * dot(incident, normal))
 }
 
-pub fn shade(intersect: &Intersect, ray_origin: &Vec3, light: &Light) -> Color {
+pub fn cast_shadow(
+    intersect: &Intersect,
+    light_direction: &Vec3,
+    light: &Light,
+    objects: &[Box<dyn RayIntersect>],
+) -> bool {
+    let shadow_ray_origin = intersect.point + intersect.normal * SHADOW_BIAS;
+    let light_distance = (light.position - intersect.point).magnitude();
+
+    objects.iter().any(|object| {
+        object
+            .ray_intersect(&shadow_ray_origin, light_direction)
+            .is_some_and(|blocker| blocker.distance < light_distance)
+    })
+}
+
+pub fn shade(
+    intersect: &Intersect,
+    ray_origin: &Vec3,
+    light: &Light,
+    objects: &[Box<dyn RayIntersect>],
+) -> Color {
     let light_direction = (light.position - intersect.point).normalize();
     let view_direction = (ray_origin - intersect.point).normalize();
 
+    let light_intensity = if cast_shadow(intersect, &light_direction, light, objects) {
+        0.0
+    } else {
+        light.intensity
+    };
+
     let diffuse_intensity = dot(&intersect.normal, &light_direction).max(0.0);
     let diffuse = intersect.material.diffuse
-        * (diffuse_intensity * intersect.material.albedo[0] * light.intensity);
+        * (diffuse_intensity * intersect.material.albedo[0] * light_intensity);
 
     let reflect_direction = reflect(&-light_direction, &intersect.normal);
     let specular_intensity = dot(&view_direction, &reflect_direction)
@@ -45,7 +74,7 @@ pub fn shade(intersect: &Intersect, ray_origin: &Vec3, light: &Light) -> Color {
         .powf(intersect.material.specular);
 
     let specular =
-        light.color * (specular_intensity * intersect.material.albedo[1] * light.intensity);
+        light.color * (specular_intensity * intersect.material.albedo[1] * light_intensity);
 
     diffuse + specular
 }
@@ -67,7 +96,7 @@ pub fn cast_ray(
     }
 
     match closest {
-        Some(intersect) => shade(&intersect, ray_origin, light),
+        Some(intersect) => shade(&intersect, ray_origin, light, objects),
         None => Color::from_hex(BACKGROUND_COLOR),
     }
 }
@@ -113,25 +142,33 @@ fn main() {
     let rubber = Material::new(Color::new(80, 0, 0), 10.0, [0.9, 0.1]);
     let cobalt = Material::new(Color::new(40, 80, 140), 80.0, [0.7, 0.4]);
     let jade = Material::new(Color::new(60, 130, 100), 30.0, [0.8, 0.25]);
+    let slate = Material::new(Color::new(80, 80, 92), 15.0, [0.85, 0.1]);
 
     let objects: Vec<Box<dyn RayIntersect>> = vec![
+        Box::new(Cylinder::new(
+            Vec3::new(0.0, -2.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            0.25,
+            6.0,
+            slate,
+        )),
         Box::new(Sphere {
-            center: Vec3::new(0.0, 0.0, 0.0),
+            center: Vec3::new(0.0, -0.75, 0.0),
             radius: 1.0,
             material: ivory,
         }),
         Box::new(Sphere {
-            center: Vec3::new(1.8, -0.3, -0.8),
+            center: Vec3::new(1.9, -1.25, -0.9),
             radius: 0.5,
             material: rubber,
         }),
         Box::new(Sphere {
-            center: Vec3::new(-1.4, 0.9, 1.0),
+            center: Vec3::new(-1.5, -1.25, 1.1),
             radius: 0.5,
             material: cobalt,
         }),
         Box::new(Cylinder::new(
-            Vec3::new(-2.3, -1.8, -0.4),
+            Vec3::new(-2.3, -1.75, -0.6),
             Vec3::new(0.28, 1.0, -0.12),
             2.0,
             0.35,
@@ -142,8 +179,8 @@ fn main() {
     let light = Light::new(Vec3::new(-6.0, 6.0, 8.0), Color::new(255, 255, 255), 1.5);
 
     let mut camera = Camera::new(
-        Vec3::new(0.0, 0.0, 5.0),
-        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.4, 6.0),
+        Vec3::new(0.0, -0.7, 0.0),
         Vec3::new(0.0, 1.0, 0.0),
     );
 
