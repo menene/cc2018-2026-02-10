@@ -1,10 +1,6 @@
 use std::fmt;
 use std::ops::{Add, Mul};
 
-/// Color con un canal por componente. El framebuffer guarda enteros de 32
-/// bits, pero mezclar colores —sumar luces, multiplicar por una intensidad—
-/// es incómodo sobre ese entero empacado, así que los canales viven
-/// separados y se empacan solo al escribir el píxel.
 #[derive(Debug, Clone, Copy)]
 pub struct Color {
     r: u8,
@@ -30,8 +26,6 @@ impl Color {
     }
 }
 
-/// Sumar dos colores es sumar luz. Se satura en 255 en lugar de dar la
-/// vuelta: dos luces intensas dan blanco, no negro.
 impl Add for Color {
     type Output = Color;
 
@@ -44,8 +38,6 @@ impl Add for Color {
     }
 }
 
-/// Multiplicar por un escalar es subir o bajar la intensidad. El `clamp`
-/// evita que un factor mayor que 1 desborde el canal.
 impl Mul<f32> for Color {
     type Output = Color;
 

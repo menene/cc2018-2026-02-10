@@ -556,7 +556,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rt_03_orbit_camera"
+name = "rt_04_light"
 version = "0.1.0"
 dependencies = [
  "minifb",
