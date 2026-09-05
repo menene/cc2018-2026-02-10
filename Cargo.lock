@@ -556,7 +556,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rt_05_shadow"
+name = "rt_06_reflections"
 version = "0.1.0"
 dependencies = [
  "minifb",

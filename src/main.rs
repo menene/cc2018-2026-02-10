@@ -28,6 +28,9 @@ const FOV: f32 = PI / 3.0;
 const ROTATION_SPEED: f32 = PI / 60.0;
 
 const SHADOW_BIAS: f32 = 1e-3;
+const REFLECTION_BIAS: f32 = 1e-3;
+
+const MAX_DEPTH: u32 = 3;
 
 pub fn reflect(incident: &Vec3, normal: &Vec3) -> Vec3 {
     incident - normal * (2.0 * dot(incident, normal))
@@ -84,7 +87,12 @@ pub fn cast_ray(
     ray_direction: &Vec3,
     objects: &[Box<dyn RayIntersect>],
     light: &Light,
+    depth: u32,
 ) -> Color {
+    if depth > MAX_DEPTH {
+        return Color::from_hex(BACKGROUND_COLOR);
+    }
+
     let mut closest: Option<Intersect> = None;
 
     for object in objects {
@@ -95,10 +103,30 @@ pub fn cast_ray(
         }
     }
 
-    match closest {
-        Some(intersect) => shade(&intersect, ray_origin, light, objects),
-        None => Color::from_hex(BACKGROUND_COLOR),
+    let Some(intersect) = closest else {
+        return Color::from_hex(BACKGROUND_COLOR);
+    };
+
+    let color = shade(&intersect, ray_origin, light, objects);
+
+    let reflectivity = intersect.material.albedo[2];
+
+    if reflectivity <= 0.0 {
+        return color;
     }
+
+    let reflect_direction = reflect(ray_direction, &intersect.normal).normalize();
+    let reflect_origin = intersect.point + intersect.normal * REFLECTION_BIAS;
+
+    let reflected = cast_ray(
+        &reflect_origin,
+        &reflect_direction,
+        objects,
+        light,
+        depth + 1,
+    );
+
+    color * (1.0 - reflectivity) + reflected * reflectivity
 }
 
 pub fn render(
@@ -124,8 +152,9 @@ pub fn render(
             let ray_direction = normalize(&Vec3::new(screen_x, screen_y, -1.0));
             let ray_direction = camera.basis_change(&ray_direction);
 
-            framebuffer
-                .set_current_color(cast_ray(&camera.eye, &ray_direction, objects, light).to_hex());
+            framebuffer.set_current_color(
+                cast_ray(&camera.eye, &ray_direction, objects, light, 0).to_hex(),
+            );
             framebuffer.point(x, y);
         }
     }
@@ -138,11 +167,12 @@ fn main() {
 
     let mut window = Window::new("Lakitu", WIDTH, HEIGHT, WindowOptions::default()).unwrap();
 
-    let ivory = Material::new(Color::new(100, 100, 80), 50.0, [0.6, 0.3]);
-    let rubber = Material::new(Color::new(80, 0, 0), 10.0, [0.9, 0.1]);
-    let cobalt = Material::new(Color::new(40, 80, 140), 80.0, [0.7, 0.4]);
-    let jade = Material::new(Color::new(60, 130, 100), 30.0, [0.8, 0.25]);
-    let slate = Material::new(Color::new(80, 80, 92), 15.0, [0.85, 0.1]);
+    let ivory = Material::new(Color::new(100, 100, 80), 50.0, [0.6, 0.3, 0.1]);
+    let rubber = Material::new(Color::new(80, 0, 0), 10.0, [0.9, 0.1, 0.0]);
+    let cobalt = Material::new(Color::new(40, 80, 140), 80.0, [0.7, 0.4, 0.15]);
+    let jade = Material::new(Color::new(60, 130, 100), 30.0, [0.8, 0.25, 0.05]);
+    let slate = Material::new(Color::new(80, 80, 92), 15.0, [0.85, 0.1, 0.2]);
+    let mirror = Material::new(Color::new(255, 255, 255), 1425.0, [0.0, 10.0, 0.85]);
 
     let objects: Vec<Box<dyn RayIntersect>> = vec![
         Box::new(Cylinder::new(
@@ -174,6 +204,11 @@ fn main() {
             0.35,
             jade,
         )),
+        Box::new(Sphere {
+            center: Vec3::new(2.35, -1.0, 1.45),
+            radius: 0.75,
+            material: mirror,
+        }),
     ];
 
     let light = Light::new(Vec3::new(-6.0, 6.0, 8.0), Color::new(255, 255, 255), 1.5);

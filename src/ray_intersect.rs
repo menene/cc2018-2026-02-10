@@ -5,11 +5,11 @@ use nalgebra_glm::Vec3;
 pub struct Material {
     pub diffuse: Color,
     pub specular: f32,
-    pub albedo: [f32; 2],
+    pub albedo: [f32; 3],
 }
 
 impl Material {
-    pub fn new(diffuse: Color, specular: f32, albedo: [f32; 2]) -> Self {
+    pub fn new(diffuse: Color, specular: f32, albedo: [f32; 3]) -> Self {
         Material {
             diffuse,
             specular,
