@@ -28,7 +28,9 @@ const FOV: f32 = PI / 3.0;
 const ROTATION_SPEED: f32 = PI / 60.0;
 
 const SHADOW_BIAS: f32 = 1e-3;
-const REFLECTION_BIAS: f32 = 1e-3;
+const SECONDARY_RAY_BIAS: f32 = 1e-3;
+
+const AIR_REFRACTIVE_INDEX: f32 = 1.0;
 
 const MAX_DEPTH: u32 = 3;
 
@@ -36,20 +38,51 @@ pub fn reflect(incident: &Vec3, normal: &Vec3) -> Vec3 {
     incident - normal * (2.0 * dot(incident, normal))
 }
 
+pub fn refract(incident: &Vec3, normal: &Vec3, refractive_index: f32) -> Option<Vec3> {
+    let cosine = dot(incident, normal).clamp(-1.0, 1.0);
+
+    let (outside_index, inside_index, surface_normal) = if cosine < 0.0 {
+        (AIR_REFRACTIVE_INDEX, refractive_index, *normal)
+    } else {
+        (refractive_index, AIR_REFRACTIVE_INDEX, -normal)
+    };
+
+    let eta = outside_index / inside_index;
+    let cosine_incident = cosine.abs();
+
+    let cosine_squared = 1.0 - eta * eta * (1.0 - cosine_incident * cosine_incident);
+
+    if cosine_squared < 0.0 {
+        return None;
+    }
+
+    Some(incident * eta + surface_normal * (eta * cosine_incident - cosine_squared.sqrt()))
+}
+
 pub fn cast_shadow(
     intersect: &Intersect,
     light_direction: &Vec3,
     light: &Light,
     objects: &[Box<dyn RayIntersect>],
-) -> bool {
+) -> f32 {
     let shadow_ray_origin = intersect.point + intersect.normal * SHADOW_BIAS;
     let light_distance = (light.position - intersect.point).magnitude();
 
-    objects.iter().any(|object| {
-        object
-            .ray_intersect(&shadow_ray_origin, light_direction)
-            .is_some_and(|blocker| blocker.distance < light_distance)
-    })
+    let mut transmission = 1.0;
+
+    for object in objects {
+        if let Some(blocker) = object.ray_intersect(&shadow_ray_origin, light_direction) {
+            if blocker.distance < light_distance {
+                transmission *= blocker.material.albedo[3];
+
+                if transmission <= 0.0 {
+                    return 0.0;
+                }
+            }
+        }
+    }
+
+    transmission
 }
 
 pub fn shade(
@@ -61,11 +94,8 @@ pub fn shade(
     let light_direction = (light.position - intersect.point).normalize();
     let view_direction = (ray_origin - intersect.point).normalize();
 
-    let light_intensity = if cast_shadow(intersect, &light_direction, light, objects) {
-        0.0
-    } else {
-        light.intensity
-    };
+    let light_intensity =
+        light.intensity * cast_shadow(intersect, &light_direction, light, objects);
 
     let diffuse_intensity = dot(&intersect.normal, &light_direction).max(0.0);
     let diffuse = intersect.material.diffuse
@@ -107,26 +137,50 @@ pub fn cast_ray(
         return Color::from_hex(BACKGROUND_COLOR);
     };
 
-    let color = shade(&intersect, ray_origin, light, objects);
-
     let reflectivity = intersect.material.albedo[2];
+    let transparency = intersect.material.albedo[3];
 
-    if reflectivity <= 0.0 {
-        return color;
+    let own_weight = (1.0 - reflectivity - transparency).max(0.0);
+
+    let mut color = shade(&intersect, ray_origin, light, objects) * own_weight;
+
+    let refracted = if transparency > 0.0 {
+        refract(
+            ray_direction,
+            &intersect.normal,
+            intersect.material.refractive_index,
+        )
+    } else {
+        None
+    };
+
+    // La reflexión interna total devuelve el rayo transmitido hacia adentro del
+    // objeto: su peso se suma al de la reflexión en lugar de perderse.
+    let reflected_weight = if transparency > 0.0 && refracted.is_none() {
+        reflectivity + transparency
+    } else {
+        reflectivity
+    };
+
+    if reflected_weight > 0.0 {
+        let reflect_direction = reflect(ray_direction, &intersect.normal).normalize();
+        let reflect_origin = intersect.point + reflect_direction * SECONDARY_RAY_BIAS;
+
+        color = color
+            + cast_ray(&reflect_origin, &reflect_direction, objects, light, depth + 1)
+                * reflected_weight;
     }
 
-    let reflect_direction = reflect(ray_direction, &intersect.normal).normalize();
-    let reflect_origin = intersect.point + intersect.normal * REFLECTION_BIAS;
+    if let Some(refract_direction) = refracted {
+        let refract_direction = refract_direction.normalize();
+        let refract_origin = intersect.point + refract_direction * SECONDARY_RAY_BIAS;
 
-    let reflected = cast_ray(
-        &reflect_origin,
-        &reflect_direction,
-        objects,
-        light,
-        depth + 1,
-    );
+        color = color
+            + cast_ray(&refract_origin, &refract_direction, objects, light, depth + 1)
+                * transparency;
+    }
 
-    color * (1.0 - reflectivity) + reflected * reflectivity
+    color
 }
 
 pub fn render(
@@ -167,12 +221,13 @@ fn main() {
 
     let mut window = Window::new("Lakitu", WIDTH, HEIGHT, WindowOptions::default()).unwrap();
 
-    let ivory = Material::new(Color::new(100, 100, 80), 50.0, [0.6, 0.3, 0.1]);
-    let rubber = Material::new(Color::new(80, 0, 0), 10.0, [0.9, 0.1, 0.0]);
-    let cobalt = Material::new(Color::new(40, 80, 140), 80.0, [0.7, 0.4, 0.15]);
-    let jade = Material::new(Color::new(60, 130, 100), 30.0, [0.8, 0.25, 0.05]);
-    let slate = Material::new(Color::new(80, 80, 92), 15.0, [0.85, 0.1, 0.2]);
-    let mirror = Material::new(Color::new(255, 255, 255), 1425.0, [0.0, 10.0, 0.85]);
+    let ivory = Material::new(Color::new(100, 100, 80), 50.0, [0.6, 0.3, 0.1, 0.0], 1.0);
+    let rubber = Material::new(Color::new(80, 0, 0), 10.0, [0.9, 0.1, 0.0, 0.0], 1.0);
+    let cobalt = Material::new(Color::new(40, 80, 140), 80.0, [0.7, 0.4, 0.15, 0.0], 1.0);
+    let jade = Material::new(Color::new(60, 130, 100), 30.0, [0.8, 0.25, 0.05, 0.0], 1.0);
+    let slate = Material::new(Color::new(80, 80, 92), 15.0, [0.85, 0.1, 0.2, 0.0], 1.0);
+    let mirror = Material::new(Color::new(255, 255, 255), 1425.0, [0.0, 10.0, 0.85, 0.0], 1.0);
+    let glass = Material::new(Color::new(255, 255, 255), 125.0, [0.0, 0.5, 0.1, 0.8], 1.5);
 
     let objects: Vec<Box<dyn RayIntersect>> = vec![
         Box::new(Cylinder::new(
@@ -208,6 +263,11 @@ fn main() {
             center: Vec3::new(2.35, -1.0, 1.45),
             radius: 0.75,
             material: mirror,
+        }),
+        Box::new(Sphere {
+            center: Vec3::new(-0.10, -0.95, 2.6),
+            radius: 0.8,
+            material: glass,
         }),
     ];
 

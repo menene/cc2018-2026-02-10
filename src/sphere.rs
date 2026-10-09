@@ -1,6 +1,8 @@
 use crate::ray_intersect::{Intersect, Material, RayIntersect};
 use nalgebra_glm::{dot, Vec3};
 
+const EPSILON: f32 = 1e-4;
+
 pub struct Sphere {
     pub center: Vec3,
     pub radius: f32,
@@ -21,11 +23,12 @@ impl RayIntersect for Sphere {
             return None;
         }
 
-        let t = (-b - discriminant.sqrt()) / (2.0 * a);
+        let root = discriminant.sqrt();
 
-        if t <= 0.0 {
-            return None;
-        }
+        let near = (-b - root) / (2.0 * a);
+        let far = (-b + root) / (2.0 * a);
+
+        let t = [near, far].into_iter().find(|t| *t > EPSILON)?;
 
         let point = ray_origin + ray_direction * t;
 
